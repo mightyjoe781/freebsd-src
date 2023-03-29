@@ -45,6 +45,8 @@ local SCRIPT_DIR = STAND_ROOT.."/scripts"
 local TREE_DIR = STAND_ROOT.."/trees"
 local OVERRIDES = STAND_ROOT.."/overrides"
 
+local SRCTOP = os.execute("make -V SRCTOP")
+
 -- QEMU binary
 local QEMU_BIN = "/usr/local/bin/qemu-system-x86_64"
 
@@ -239,6 +241,30 @@ local function make_freebsd_minimal_trees()
   for arch in pairs(ARCH) do
     make_minimal_freebsd_tree(arch)
   end
+end
+
+local function make_freebsd_test_trees()
+    for arch in pairs(ARCH) do
+      local machine, machine_arch = string.match(ARCH[arch], "(%w+):(%w+)")
+      local machine_combo = machine_combo(machine, machine_arch)
+      local tree = TREE_DIR.."/"..machine_combo.."/test-stand"
+
+      execute("mkdir -p "..tree)
+
+      execute("mktree -deUW -f "..SRCTOP.."/etc/mtree/BSD.root.dist -p "..tree)
+      print("Creating tree for "..machine_combo)
+      os.execute("cd "..SRCTOP.."/stand")
+
+      -- TODO: understand bash code for SHELL
+      -- build
+      local SHELL = "make -j 100 all" -- build all
+      execute("make buildenv TARGET="..machine.." TARGET_ARCH="..machine_arch)
+
+      execute("rm -rf "..tree.."/bin")
+      execute("rm -rf "..tree.."/[ac-z]*")
+
+    end
+
 end
 
 -- all script routines
