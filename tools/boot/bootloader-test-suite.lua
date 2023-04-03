@@ -39,8 +39,9 @@ end
 
 -- execute command or die
 local function execute(cmd)
-    local ret = os.execute(cmd)
+    local _,msg,ret = os.execute(cmd)
     if ret ~= 0 then
+        print(msg)
         die("Failed to execute "..cmd)
     end
 end
@@ -85,7 +86,7 @@ mkdirs()
 local function download_freebsd_img(arch, flavour)
     local machine, machine_arch = string.match(ARCH[arch], "(%w+):(%w+)")
     local machine_combo = machine_combo(machine, machine_arch)
-    local file="FREEBSD-"..FREEBSD_VERSION.."-RELEASE-"..machine_combo.."-"..flavour
+    local file="FreeBSD-"..FREEBSD_VERSION.."-RELEASE-"..machine_combo.."-"..flavour
     local url = URLBASE.."/"..machine.."/"..machine_arch.."/ISO-IMAGES/"..FREEBSD_VERSION.."/"..file..".xz"
 
     -- make sure CACHE_DIR exists
