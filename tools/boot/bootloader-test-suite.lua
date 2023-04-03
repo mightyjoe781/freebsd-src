@@ -57,7 +57,8 @@ local QEMU_BIN = "/usr/local/bin/qemu-system-x86_64"
 local espsize = 33292
 
 -- all supported architectures
-local ARCH = {"amd64:amd64", "i386:i386", "arm64:aarch64", "arm:armv7", "powerpc:powerpc", "powerpc64:powerpc64", "riscv64:riscv64", "powerpc64le:powerpc64le"}
+-- local ARCH = {"amd64:amd64", "i386:i386", "arm64:aarch64", "arm:armv7", "powerpc:powerpc", "powerpc64:powerpc64", "riscv64:riscv64", "powerpc64le:powerpc64le"}
+local ARCH = {"amd64:amd64"}
 
 -- die on error
 local function die(msg)
@@ -256,15 +257,151 @@ local function make_freebsd_test_trees()
       os.execute("cd "..SRCTOP.."/stand")
 
       -- TODO: understand bash code for SHELL
-      -- build
-      local SHELL = "make -j 100 all" -- build all
-      execute("make buildenv TARGET="..machine.." TARGET_ARCH="..machine_arch)
+
+      execute("make -j 100 all buildenv TARGET="..machine.." TARGET_ARCH="..machine_arch)
+      execute("make install DESTDIR="..tree.." MK_MAN=no MK_INSTALL_AS_USER=yes WITHOUT_DEBUG_FILES=yes".." buildenv TARGET="..machine.." TARGET_ARCH="..machine_arch)
 
       execute("rm -rf "..tree.."/bin")
       execute("rm -rf "..tree.."/[ac-z]*")
 
     end
 
+end
+
+-- create freebsd esps function
+local function make_freebsd_esps(arch)
+
+    for arch in pairs(ARCH) do
+      local machine, machine_arch = string.match(ARCH[arch], "(%w+):(%w+)")
+      local machine_combo = machine_combo(machine, machine_arch)
+      local tree = TREE_DIR.."/"..machine_combo.."/test-stand"
+      local esp = TREE_DIR.."/"..machine_combo.."/freebsd-esp"
+
+      -- make directory and clean up first
+      execute("rm -rf "..esp)
+      execute("mkdir -p "..esp)
+
+      -- make directory TREE_DIR/efi/boot
+      execute("mkdir -p "..esp.."/efi/boot")
+      if machine_arch == "amd64" then
+        execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootx64.efi")
+      elseif machine_arch == "i386" then
+        execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootia32.efi")
+      elseif machine_arch == "arm64" then
+        execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootaa64.efi")
+      elseif machine_arch == "arm" then
+        execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootarm.efi")
+      end
+
+    end
+  
+end
+
+local function make_freebsd_images()
+  for arch in pairs(ARCH) do
+    local machine, machine_arch = string.match(ARCH[arch], "(%w+):(%w+)")
+    local machine_combo = machine_combo(machine, machine_arch)
+    local src = TREE_DIR.."/"..machine_combo.."/freebsd-esp"
+    local dir = TREE_DIR.."/"..machine_combo.."/freebsd"
+    local dir2 = TREE_DIR.."/"..machine_combo.."/freebsd-stand"
+    local esp = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".esp"
+    local ufs = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".ufs"
+    local img = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
+
+    -- make directories
+    execute("mkdir -p "..IMAGE_DIR.."/"..machine_combo)
+    execute("mkdir -p "..dir2.."/etc")
+
+    -- set fstab file
+    local fstab = [[
+/dev/ufs/freebsd / ufs rw 1 1
+]]
+    -- save this fstab file
+    local f = io.open(dir2.."/etc/fstab", "w")
+    f:write(fstab)
+    f:close()
+
+    -- makefs command
+    execute("makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 \
+    -o volume_label=EFISYS -s100m "..esp.." "..src)
+    -- makefs command for ufs
+    execute("makefs -t ffs -B little -s 200m -o label=root"..ufs.." "..dir.." "..dir2)
+    -- makeimg image
+    execute("mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..ufs.." -o "..img)
+
+  end
+  
+end
+
+
+local function make_freebsd_scripts()
+  for arch in pairs(ARCH) do
+    local machine, machine_arch = string.match(ARCH[arch], "(%w+):(%w+)")
+    local machine_combo = machine_combo(machine, machine_arch)
+    local bios_code = BIOS_DIR.."/edk2-"..machine_combo.."-code.fd"
+    local bios_vars = BIOS_DIR.."/edk2-"..machine_combo.."-vars.fd"
+
+    if machine_arch == "amd64" then
+      -- if bios code other than /usr/local/share/qemu/edk2-x86_64-code.fd
+      -- then copy over to bios_code
+      if bios_code ~= "/usr/local/share/qemu/edk2-x86_64-code.fd" then
+        execute("cp /usr/local/share/qemu/edk2-x86_64-code.fd "..bios_code)
+        -- copy over vars file too
+        execute("cp /usr/local/share/qemu/edk2-i386-vars.fd "..bios_vars)
+      end
+    elseif machine_arch == aarch64 then
+      -- if bios code other than /usr/local/share/qemu/edk2-aarch64-code.fd
+      -- then copy over to bios_code
+      if bios_code ~= "/usr/local/share/qemu/edk2-aarch64-code.fd" then
+          -- aarch64 vars starts as an empty file
+          execute("dd if=/dev/zero of="..bios_vars.." bs=1M count=64")
+          execute("dd if=/dev/zero of="..bios_code.." bs=1M count=64")
+          execute("dd if=/usr/local/share/qemu/edk2-aarch64-code.fd of="..bios_code.." conv=notrunc")
+      end
+    end
+    -- make a script to run qemu
+    local img = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
+    local script = SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
+
+    -- make directory
+    execute("mkdir -p "..SCRIPT_DIR.."/"..machine_combo)
+
+    -- set script file
+    if machine_arch == "amd64" then
+      local script_file = string.format("%s/qemu-system-x86_64 -nographic -m 512M \
+      -drive file=%s,if=none,id=drive0,cache=writeback,format=raw \
+      -device virtio-blk,drive=drive0,bootindex=0 \
+      -drive file=%s,format=raw,if=pflash \
+      -drive file=%s,format=raw,if=pflash \
+      -monitor telnet::4444,server,nowait \
+      -serial stdio \\$*",
+      QEMU_BIN, img, bios_code, bios_vars)
+
+      -- save this script
+      local f = io.open(script, "w")
+      f:write(script_file)
+      f:close()
+    elseif machine_arch == "aarch64" then
+      local raw = IMAGE_DIR.."/"..machine_combo.."/nvme-test-empty.raw"
+
+      local script_file = string.format("%s/qemu-system-aarch64 -nographic -machine virt,gic-version=3 -m 512M \
+      -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
+      -device virtio-blk,drive=drive0,bootindex=0 \
+      -drive file=%s,format=raw,if=pflash \
+      -drive file=%s,format=raw,if=pflash \
+      -drive file=%s,if=none,id=drive1,cache=writeback,format=raw \
+      -device nvme,serial=deadbeef,drive=drive1 \
+      -monitor telnet::4444,server,nowait \
+      -serial stdio \\$*",
+      QEMU_BIN, img, bios_code, bios_vars, raw)
+
+      -- save this script
+      local f = io.open(script, "w")
+      f:write(script_file)
+      f:close()
+      
+    end
+  end
 end
 
 -- all script routines
