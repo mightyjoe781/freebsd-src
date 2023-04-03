@@ -121,7 +121,7 @@ local function make_minimal_freebsd_tree(arch)
   local machine, machine_arch = string.match(ARCH[arch], "(%w+):(%w+)")
   local machine_combo = machine_combo(machine, machine_arch)
   local flavour = find_flavour(arch)
-  local file="FREEBSD-"..FREEBSD_VERSION.."-RELEASE-"..machine_combo.."-"..flavour
+  local file="FreeBSD-"..FREEBSD_VERSION.."-RELEASE-"..machine_combo.."-"..flavour
   local tree = TREE_DIR.."/"..machine_combo.."/freebsd"
   -- clean up tree
   execute("rm -rf "..tree)
