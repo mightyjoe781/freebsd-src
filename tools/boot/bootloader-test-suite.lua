@@ -139,8 +139,8 @@ local function make_minimal_freebsd_tree(arch)
   execute("ln -s / "..tree.."/usr")
 
   -- snag binaries for simple /etc/rc/file
-  execute("tar -C "..tree.." -xf "..CACHE_DIR.."/"..file.." -s 'sbin/reboot' 'sbin/halt' 'sbin/init' 'sbin/sysctl' \
-      'lib/libncursesw.so.9' 'lib/libc.so' 'lib/libedit.so.8' 'libexec/ld-elf.so.1'")
+  execute("tar -C "..tree.." -xf "..CACHE_DIR.."/"..file.." sbin/reboot sbin/halt sbin/init sbin/sysctl \
+      lib/libncursesw.so.9 lib/libc.so lib/libedit.so.8 libexec/ld-elf.so.1")
   
   -- simple etc/rc
   local rc = [[
@@ -183,13 +183,13 @@ halt -p
     -- Copy the kernel (but not the boot loader, we'll add the one to test later)
     -- This will take care of both UFS and ZFS boots as well as geli
     --  Note: It's OK for device.hints to be missing. It's mostly for legacy platforms.
-    execute("tar -C "..tree.." -xf "..CACHE_DIR.."/"..file.." -s \
-        'boot/kernel/kernel' \
-        'boot/kernel/acl_nfs4.ko' \
-        'boot/kernel/cryptodev.ko' \
-        'boot/kernel/zfs.ko' \
-        'boot/kernel/geom_eli.ko' \
-        'boot/device.hints'")
+    execute("tar -C "..tree.." -xf "..CACHE_DIR.."/"..file.."  \
+        boot/kernel/kernel \
+        boot/kernel/acl_nfs4.ko \
+        boot/kernel/cryptodev.ko \
+        boot/kernel/zfs.ko \
+        boot/kernel/geom_eli.ko \
+        boot/device.hints")
   end
 
   -- setup some common settings for serial console
