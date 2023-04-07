@@ -7,7 +7,7 @@ local URLBASE = "https://download.freebsd.org/ftp/releases"
 -- write stand root from home directory
 local HOME = os.getenv("HOME")
 
-local STAND_ROOT = HOME.."/stand"
+local STAND_ROOT = HOME.."/stand-test-root"
 
 local CACHE_DIR = STAND_ROOT.."/cache"
 local IMAGE_DIR = STAND_ROOT.."/images"
