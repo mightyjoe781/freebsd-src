@@ -293,7 +293,7 @@ local function make_freebsd_images()
     local machine_combo = machine_combo(machine, machine_arch)
     local src = TREE_DIR.."/"..machine_combo.."/freebsd-esp"
     local dir = TREE_DIR.."/"..machine_combo.."/freebsd"
-    local dir2 = TREE_DIR.."/"..machine_combo.."/freebsd-stand"
+    local dir2 = TREE_DIR.."/"..machine_combo.."/test-stand"
     local esp = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".esp"
     local ufs = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".ufs"
     local img = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
@@ -310,10 +310,9 @@ local function make_freebsd_images()
     write_file(dir2.."/etc/fstab", fstab)
 
     -- makefs command
-    execute("makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 \
-    -o volume_label=EFISYS -s100m "..esp.." "..src)
+    execute("makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 -o volume_label=EFISYS -s100m "..esp.." "..src)
     -- makefs command for ufs
-    execute("makefs -t ffs -B little -s 200m -o label=root"..ufs.." "..dir.." "..dir2)
+    execute("makefs -t ffs -B little -s 200m -o label=root "..ufs.." "..dir.." "..dir2)
     -- makeimg image
     execute("mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..ufs.." -o "..img)
 
