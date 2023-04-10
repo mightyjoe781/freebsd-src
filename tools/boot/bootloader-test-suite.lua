@@ -29,7 +29,8 @@ local function capture_execute(cmd, raw)
   s = string.gsub(s, '[\n\r]+', ' ')
   return s
 end
-local SRCTOP = capture_execute("make -V SRCTOP", true)
+-- don't take raw values causes issues with concatenation
+local SRCTOP = capture_execute("make -V SRCTOP", false)
 
 -- QEMU binary
 local QEMU_BIN = "/usr/local/bin/qemu-system-x86_64"
@@ -242,7 +243,7 @@ local function make_freebsd_test_trees()
 
       execute("mkdir -p "..tree)
 
-      execute("mktree -deUW -f "..SRCTOP.."/etc/mtree/BSD.root.dist -p "..tree)
+      execute("mtree -deUW -f "..SRCTOP.."/etc/mtree/BSD.root.dist -p "..tree)
       print("Creating tree for "..machine_combo)
       os.execute("cd "..SRCTOP.."/stand")
 
