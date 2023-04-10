@@ -355,23 +355,21 @@ local function make_freebsd_scripts()
 
     -- set script file
     if machine_arch == "amd64" then
-      local script_file = string.format("%s/qemu-system-x86_64 -nographic -m 512M \
+      local script_file = string.format([[%s -nographic -m 512M \
       -drive file=%s,if=none,id=drive0,cache=writeback,format=raw \
       -device virtio-blk,drive=drive0,bootindex=0 \
       -drive file=%s,format=raw,if=pflash \
       -drive file=%s,format=raw,if=pflash \
       -monitor telnet::4444,server,nowait \
-      -serial stdio \\$*",
+      -serial stdio $*]],
       QEMU_BIN, img, bios_code, bios_vars)
 
       -- save this script
-      local f = io.open(script, "w")
-      f:write(script_file)
-      f:close()
+      write_file(script, script_file)
     elseif machine_arch == "aarch64" then
       local raw = IMAGE_DIR.."/"..machine_combo.."/nvme-test-empty.raw"
 
-      local script_file = string.format("%s/qemu-system-aarch64 -nographic -machine virt,gic-version=3 -m 512M \
+      local script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
       -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
       -device virtio-blk,drive=drive0,bootindex=0 \
       -drive file=%s,format=raw,if=pflash \
@@ -379,14 +377,11 @@ local function make_freebsd_scripts()
       -drive file=%s,if=none,id=drive1,cache=writeback,format=raw \
       -device nvme,serial=deadbeef,drive=drive1 \
       -monitor telnet::4444,server,nowait \
-      -serial stdio \\$*",
+      -serial stdio $*]],
       QEMU_BIN, img, bios_code, bios_vars, raw)
 
       -- save this script
-      local f = io.open(script, "w")
-      f:write(script_file)
-      f:close()
-      
+      write_file(script, script_file)
     end
   end
 end
