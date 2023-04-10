@@ -267,6 +267,7 @@ struct bridge_softc {
 	uint32_t		sc_brtexceeded;	/* # of cache drops */
 	struct ifnet		*sc_ifaddr;	/* member mac copied from */
 	struct ether_addr	sc_defaddr;	/* Default MAC address */
+	if_input_fn_t		sc_if_input;	/* Saved copy of if_input */
 	struct epoch_context	sc_epoch_ctx;
 };
 
@@ -298,6 +299,7 @@ static int	bridge_altq_transmit(if_t, struct mbuf *);
 #endif
 static void	bridge_qflush(struct ifnet *);
 static struct mbuf *bridge_input(struct ifnet *, struct mbuf *);
+static void	bridge_inject(struct ifnet *, struct mbuf *);
 static int	bridge_output(struct ifnet *, struct mbuf *, struct sockaddr *,
 		    struct rtentry *);
 static int	bridge_enqueue(struct bridge_softc *, struct ifnet *,
@@ -459,6 +461,21 @@ SYSCTL_INT(_net_link_bridge, OID_AUTO, allow_llz_overlap,
     CTLFLAG_RW | CTLFLAG_VNET, &VNET_NAME(allow_llz_overlap), 0,
     "Allow overlap of link-local scope "
     "zones of a bridge interface and the member interfaces");
+
+/* log MAC address port flapping */
+VNET_DEFINE_STATIC(bool, log_mac_flap) = true;
+#define	V_log_mac_flap	VNET(log_mac_flap)
+SYSCTL_BOOL(_net_link_bridge, OID_AUTO, log_mac_flap,
+    CTLFLAG_RW | CTLFLAG_VNET, &VNET_NAME(log_mac_flap), true,
+    "Log MAC address port flapping");
+
+VNET_DEFINE_STATIC(int, log_interval) = 5;
+VNET_DEFINE_STATIC(int, log_count) = 0;
+VNET_DEFINE_STATIC(struct timeval, log_last) = { 0 };
+
+#define	V_log_interval	VNET(log_interval)
+#define	V_log_count	VNET(log_count)
+#define	V_log_last	VNET(log_last)
 
 struct bridge_control {
 	int	(*bc_func)(struct bridge_softc *, void *);
@@ -753,6 +770,15 @@ bridge_clone_create(struct if_clone *ifc, char *name, size_t len,
 #ifdef VIMAGE
 	ifp->if_reassign = bridge_reassign;
 #endif
+	sc->sc_if_input = ifp->if_input;	/* ether_input */
+	ifp->if_input = bridge_inject;
+
+	/*
+	 * Allow BRIDGE_INPUT() to pass in packets originating from the bridge
+	 * itself via bridge_inject().  This is required for netmap but
+	 * otherwise has no effect.
+	 */
+	ifp->if_bridge_input = bridge_input;
 
 	BRIDGE_LIST_LOCK();
 	LIST_INSERT_HEAD(&V_bridge_list, sc, sc_list);
@@ -2340,6 +2366,19 @@ bridge_forward(struct bridge_softc *sc, struct bridge_iflist *sbif,
 	    sbif->bif_stp.bp_state == BSTP_IFSTATE_LEARNING)
 		goto drop;
 
+#ifdef DEV_NETMAP
+	/*
+	 * Hand the packet to netmap only if it wasn't injected by netmap
+	 * itself.
+	 */
+	if ((m->m_flags & M_BRIDGE_INJECT) == 0 &&
+	    (if_getcapenable(ifp) & IFCAP_NETMAP) != 0) {
+		ifp->if_input(ifp, m);
+		return;
+	}
+	m->m_flags &= ~M_BRIDGE_INJECT;
+#endif
+
 	/*
 	 * At this point, the port either doesn't participate
 	 * in spanning tree or it is in the forwarding state.
@@ -2446,7 +2485,7 @@ drop:
 static struct mbuf *
 bridge_input(struct ifnet *ifp, struct mbuf *m)
 {
-	struct bridge_softc *sc = ifp->if_bridge;
+	struct bridge_softc *sc;
 	struct bridge_iflist *bif, *bif2;
 	struct ifnet *bifp;
 	struct ether_header *eh;
@@ -2456,11 +2495,31 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 
 	NET_EPOCH_ASSERT();
 
-	if ((sc->sc_ifp->if_drv_flags & IFF_DRV_RUNNING) == 0)
-		return (m);
-
-	bifp = sc->sc_ifp;
+	eh = mtod(m, struct ether_header *);
 	vlan = VLANTAGOF(m);
+
+	sc = ifp->if_bridge;
+	if (sc == NULL) {
+		/*
+		 * This packet originated from the bridge itself, so it must
+		 * have been transmitted by netmap.  Derive the "source"
+		 * interface from the source address and drop the packet if the
+		 * source address isn't known.
+		 */
+		KASSERT((m->m_flags & M_BRIDGE_INJECT) != 0,
+		    ("%s: ifnet %p missing a bridge softc", __func__, ifp));
+		sc = if_getsoftc(ifp);
+		ifp = bridge_rtlookup(sc, eh->ether_shost, vlan);
+		if (ifp == NULL) {
+			if_inc_counter(sc->sc_ifp, IFCOUNTER_IERRORS, 1);
+			m_freem(m);
+			return (NULL);
+		}
+		m->m_pkthdr.rcvif = ifp;
+	}
+	bifp = sc->sc_ifp;
+	if ((bifp->if_drv_flags & IFF_DRV_RUNNING) == 0)
+		return (m);
 
 	/*
 	 * Implement support for bridge monitoring. If this flag has been
@@ -2480,8 +2539,6 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 	if (bif == NULL) {
 		return (m);
 	}
-
-	eh = mtod(m, struct ether_header *);
 
 	bridge_span(sc, m);
 
@@ -2511,6 +2568,18 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 		/* Perform the bridge forwarding function with the copy. */
 		bridge_forward(sc, bif, mc);
 
+#ifdef DEV_NETMAP
+		/*
+		 * If netmap is enabled and has not already seen this packet,
+		 * then it will be consumed by bridge_forward().
+		 */
+		if ((if_getcapenable(bifp) & IFCAP_NETMAP) != 0 &&
+		    (m->m_flags & M_BRIDGE_INJECT) == 0) {
+			m_freem(m);
+			return (NULL);
+		}
+#endif
+
 		/*
 		 * Reinject the mbuf as arriving on the bridge so we have a
 		 * chance at claiming multicast packets. We can not loop back
@@ -2527,7 +2596,8 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 		}
 		if (mc2 != NULL) {
 			mc2->m_pkthdr.rcvif = bifp;
-			(*bifp->if_input)(bifp, mc2);
+			mc2->m_flags &= ~M_BRIDGE_INJECT;
+			sc->sc_if_input(bifp, mc2);
 		}
 
 		/* Return the original packet for local processing. */
@@ -2539,32 +2609,40 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 		return (m);
 	}
 
-#if (defined(INET) || defined(INET6))
-#   define OR_CARP_CHECK_WE_ARE_DST(iface) \
-	|| ((iface)->if_carp \
-	    && (*carp_forus_p)((iface), eh->ether_dhost))
-#   define OR_CARP_CHECK_WE_ARE_SRC(iface) \
-	|| ((iface)->if_carp \
-	    && (*carp_forus_p)((iface), eh->ether_shost))
+#if defined(INET) || defined(INET6)
+#define	CARP_CHECK_WE_ARE_DST(iface) \
+	((iface)->if_carp && (*carp_forus_p)((iface), eh->ether_dhost))
+#define	CARP_CHECK_WE_ARE_SRC(iface) \
+	((iface)->if_carp && (*carp_forus_p)((iface), eh->ether_shost))
 #else
-#   define OR_CARP_CHECK_WE_ARE_DST(iface)
-#   define OR_CARP_CHECK_WE_ARE_SRC(iface)
+#define	CARP_CHECK_WE_ARE_DST(iface)	false
+#define	CARP_CHECK_WE_ARE_SRC(iface)	false
 #endif
 
 #ifdef INET6
-#   define OR_PFIL_HOOKED_INET6 \
-	|| PFIL_HOOKED_IN(V_inet6_pfil_head)
+#define	PFIL_HOOKED_INET6	PFIL_HOOKED_IN(V_inet6_pfil_head)
 #else
-#   define OR_PFIL_HOOKED_INET6
+#define	PFIL_HOOKED_INET6	false
 #endif
 
-#define GRAB_OUR_PACKETS(iface) \
-	if ((iface)->if_type == IFT_GIF) \
-		continue; \
-	/* It is destined for us. */ \
-	if (memcmp(IF_LLADDR((iface)), eh->ether_dhost,  ETHER_ADDR_LEN) == 0 \
-	    OR_CARP_CHECK_WE_ARE_DST((iface))				\
-	    ) {								\
+#ifdef DEV_NETMAP
+#define	GRAB_FOR_NETMAP(ifp, m) do {					\
+	if ((if_getcapenable(ifp) & IFCAP_NETMAP) != 0 &&		\
+	    ((m)->m_flags & M_BRIDGE_INJECT) == 0) {			\
+		(ifp)->if_input(ifp, m);				\
+		return (NULL);						\
+	}								\
+} while (0)
+#else
+#define	GRAB_FOR_NETMAP(ifp, m)
+#endif
+
+#define GRAB_OUR_PACKETS(iface)						\
+	if ((iface)->if_type == IFT_GIF)				\
+		continue;						\
+	/* It is destined for us. */					\
+	if (memcmp(IF_LLADDR(iface), eh->ether_dhost, ETHER_ADDR_LEN) == 0 || \
+	    CARP_CHECK_WE_ARE_DST(iface)) {				\
 		if (bif->bif_flags & IFBIF_LEARNING) {			\
 			error = bridge_rtupdate(sc, eh->ether_shost,	\
 			    vlan, bif, 0, IFBAF_DYNAMIC);		\
@@ -2581,10 +2659,12 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 		/* It's passing over or to the bridge, locally. */	\
 		ETHER_BPF_MTAP(bifp, m);				\
 		if_inc_counter(bifp, IFCOUNTER_IPACKETS, 1);		\
-		if_inc_counter(bifp, IFCOUNTER_IBYTES, m->m_pkthdr.len); \
+		if_inc_counter(bifp, IFCOUNTER_IBYTES, m->m_pkthdr.len);\
+		/* Hand the packet over to netmap if necessary. */	\
+		GRAB_FOR_NETMAP(bifp, m);				\
 		/* Filter on the physical interface. */			\
-		if (V_pfil_local_phys && (PFIL_HOOKED_IN(V_inet_pfil_head) \
-		     OR_PFIL_HOOKED_INET6)) {				\
+		if (V_pfil_local_phys && (PFIL_HOOKED_IN(V_inet_pfil_head) || \
+		    PFIL_HOOKED_INET6)) {				\
 			if (bridge_pfil(&m, NULL, ifp,			\
 			    PFIL_IN) != 0 || m == NULL) {		\
 				return (NULL);				\
@@ -2596,9 +2676,8 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 	}								\
 									\
 	/* We just received a packet that we sent out. */		\
-	if (memcmp(IF_LLADDR((iface)), eh->ether_shost, ETHER_ADDR_LEN) == 0 \
-	    OR_CARP_CHECK_WE_ARE_SRC((iface))			\
-	    ) {								\
+	if (memcmp(IF_LLADDR(iface), eh->ether_shost, ETHER_ADDR_LEN) == 0 || \
+	    CARP_CHECK_WE_ARE_SRC(iface)) {				\
 		m_freem(m);						\
 		return (NULL);						\
 	}
@@ -2622,15 +2701,38 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 		GRAB_OUR_PACKETS(bif2->bif_ifp)
 	}
 
-#undef OR_CARP_CHECK_WE_ARE_DST
-#undef OR_CARP_CHECK_WE_ARE_SRC
-#undef OR_PFIL_HOOKED_INET6
+#undef CARP_CHECK_WE_ARE_DST
+#undef CARP_CHECK_WE_ARE_SRC
+#undef PFIL_HOOKED_INET6
+#undef GRAB_FOR_NETMAP
 #undef GRAB_OUR_PACKETS
 
 	/* Perform the bridge forwarding function. */
 	bridge_forward(sc, bif, m);
 
 	return (NULL);
+}
+
+/*
+ * Inject a packet back into the host ethernet stack.  This will generally only
+ * be used by netmap when an application writes to the host TX ring.  The
+ * M_BRIDGE_INJECT flag ensures that the packet is re-routed to the bridge
+ * interface after ethernet processing.
+ */
+static void
+bridge_inject(struct ifnet *ifp, struct mbuf *m)
+{
+	struct bridge_softc *sc;
+
+	KASSERT((if_getcapenable(ifp) & IFCAP_NETMAP) != 0,
+	    ("%s: iface %s is not running in netmap mode",
+	    __func__, if_name(ifp)));
+	KASSERT((m->m_flags & M_BRIDGE_INJECT) == 0,
+	    ("%s: mbuf %p has M_BRIDGE_INJECT set", __func__, m));
+
+	m->m_flags |= M_BRIDGE_INJECT;
+	sc = if_getsoftc(ifp);
+	sc->sc_if_input(ifp, m);
 }
 
 /*
@@ -2773,6 +2875,7 @@ bridge_rtupdate(struct bridge_softc *sc, const uint8_t *dst, uint16_t vlan,
     struct bridge_iflist *bif, int setflags, uint8_t flags)
 {
 	struct bridge_rtnode *brt;
+	struct bridge_iflist *obif;
 	int error;
 
 	BRIDGE_LOCK_OR_NET_EPOCH_ASSERT(sc);
@@ -2796,7 +2899,7 @@ bridge_rtupdate(struct bridge_softc *sc, const uint8_t *dst, uint16_t vlan,
 
 		/* Check again, now that we have the lock. There could have
 		 * been a race and we only want to insert this once. */
-		if ((brt = bridge_rtnode_lookup(sc, dst, vlan)) != NULL) {
+		if (bridge_rtnode_lookup(sc, dst, vlan) != NULL) {
 			BRIDGE_RT_UNLOCK(sc);
 			return (0);
 		}
@@ -2845,12 +2948,24 @@ bridge_rtupdate(struct bridge_softc *sc, const uint8_t *dst, uint16_t vlan,
 	}
 
 	if ((brt->brt_flags & IFBAF_TYPEMASK) == IFBAF_DYNAMIC &&
-	    brt->brt_dst != bif) {
+	    (obif = brt->brt_dst) != bif) {
 		BRIDGE_RT_LOCK(sc);
 		brt->brt_dst->bif_addrcnt--;
 		brt->brt_dst = bif;
 		brt->brt_dst->bif_addrcnt++;
 		BRIDGE_RT_UNLOCK(sc);
+
+		if (V_log_mac_flap &&
+		    ppsratecheck(&V_log_last, &V_log_count, V_log_interval)) {
+			uint8_t *addr = &brt->brt_addr[0];
+			log(LOG_NOTICE,
+			    "%s: mac address %02x:%02x:%02x:%02x:%02x:%02x vlan %d moved from %s to %s\n",
+			    sc->sc_ifp->if_xname,
+			    addr[0], addr[1], addr[2], addr[3], addr[4], addr[5],
+			    brt->brt_vlan,
+			    obif->bif_ifp->if_xname,
+			    bif->bif_ifp->if_xname);
+		}
 	}
 
 	if ((flags & IFBAF_TYPEMASK) == IFBAF_DYNAMIC)

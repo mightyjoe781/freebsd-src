@@ -461,6 +461,7 @@ struct nl_parsed_route {
 	uint8_t			rtm_dst_len;
 	uint8_t			rtm_protocol;
 	uint8_t			rtm_type;
+	uint32_t		rtm_flags;
 };
 
 #define	_IN(_field)	offsetof(struct rtmsg, _field)
@@ -488,6 +489,7 @@ static const struct nlfield_parser nlf_p_rtmsg[] = {
 	{ .off_in = _IN(rtm_dst_len), .off_out = _OUT(rtm_dst_len), .cb = nlf_get_u8 },
 	{ .off_in = _IN(rtm_protocol), .off_out = _OUT(rtm_protocol), .cb = nlf_get_u8 },
 	{ .off_in = _IN(rtm_type), .off_out = _OUT(rtm_type), .cb = nlf_get_u8 },
+	{ .off_in = _IN(rtm_flags), .off_out = _OUT(rtm_flags), .cb = nlf_get_u32 },
 };
 #undef _IN
 #undef _OUT
@@ -581,7 +583,8 @@ handle_rtm_getroute(struct nlpcb *nlp, struct nl_parsed_route *attrs,
 {
 	RIB_RLOCK_TRACKER;
 	struct rib_head *rnh;
-	struct rtentry *rt;
+	const struct rtentry *rt;
+	struct route_nhop_data rnd;
 	uint32_t fibnum = attrs->rta_table;
 	sa_family_t family = attrs->rtm_family;
 
@@ -596,13 +599,17 @@ handle_rtm_getroute(struct nlpcb *nlp, struct nl_parsed_route *attrs,
 
 	RIB_RLOCK(rnh);
 
-	rt = (struct rtentry *)rnh->rnh_matchaddr(attrs->rta_dst, &rnh->head);
+	struct sockaddr *dst = attrs->rta_dst;
+
+	if (attrs->rtm_flags & RTM_F_PREFIX)
+		rt = rib_lookup_prefix_plen(rnh, dst, attrs->rtm_dst_len, &rnd);
+	else
+		rt = (const struct rtentry *)rnh->rnh_matchaddr(dst, &rnh->head);
 	if (rt == NULL) {
 		RIB_RUNLOCK(rnh);
 		return (ESRCH);
 	}
 
-	struct route_nhop_data rnd;
 	rt_get_rnd(rt, &rnd);
 	rnd.rnd_nhop = nhop_select_func(rnd.rnd_nhop, 0);
 
@@ -661,7 +668,7 @@ handle_rtm_dump(struct nlpcb *nlp, uint32_t fibnum, int family,
 }
 
 static struct nhop_object *
-finalize_nhop(struct nhop_object *nh, int *perror)
+finalize_nhop(struct nhop_object *nh, const struct sockaddr *dst, int *perror)
 {
 	/*
 	 * The following MUST be filled:
@@ -682,7 +689,15 @@ finalize_nhop(struct nhop_object *nh, int *perror)
 	} else {
 		/* Gateway is set up, we can derive ifp if not set */
 		if (nh->nh_ifp == NULL) {
-			struct ifaddr *ifa = ifa_ifwithnet(&nh->gw_sa, 1, nhop_get_fibnum(nh));
+			uint32_t fibnum = nhop_get_fibnum(nh);
+			uint32_t flags = 0;
+
+			if (nh->nh_flags & NHF_GATEWAY)
+				flags = RTF_GATEWAY;
+			else if (nh->nh_flags & NHF_HOST)
+				flags = RTF_HOST;
+
+			struct ifaddr *ifa = ifa_ifwithroute(flags, dst, &nh->gw_sa, fibnum);
 			if (ifa == NULL) {
 				NL_LOG(LOG_DEBUG, "Unable to determine ifp, skipping");
 				*perror = EINVAL;
@@ -693,7 +708,19 @@ finalize_nhop(struct nhop_object *nh, int *perror)
 	}
 	/* Both nh_ifp and gateway are set */
 	if (nh->nh_ifa == NULL) {
-		struct ifaddr *ifa = ifaof_ifpforaddr(&nh->gw_sa, nh->nh_ifp);
+		const struct sockaddr *gw_sa = &nh->gw_sa;
+
+		if (gw_sa->sa_family != dst->sa_family) {
+			/*
+			 * Use dst as the target for determining the default
+			 * preferred ifa IF
+			 * 1) the gateway is link-level (e.g. direct route)
+			 * 2) the gateway family is different (e.g. IPv4 over IPv6).
+			 */
+			gw_sa = dst;
+		}
+
+		struct ifaddr *ifa = ifaof_ifpforaddr(gw_sa, nh->nh_ifp);
 		if (ifa == NULL) {
 			NL_LOG(LOG_DEBUG, "Unable to determine ifa, skipping");
 			*perror = EINVAL;
@@ -717,7 +744,7 @@ get_pxflag(const struct nl_parsed_route *attrs)
 			pxflag = NHF_DEFAULT;
 		break;
 	case AF_INET6:
-		if (attrs->rtm_dst_len == 32)
+		if (attrs->rtm_dst_len == 128)
 			pxflag = NHF_HOST;
 		else if (attrs->rtm_dst_len == 0)
 			pxflag = NHF_DEFAULT;
@@ -761,11 +788,12 @@ create_nexthop_one(struct nl_parsed_route *attrs, struct rta_mpath_nh *mpnh,
 	}
 	if (mpnh->ifp != NULL)
 		nhop_set_transmit_ifp(nh, mpnh->ifp);
+	nhop_set_pxtype_flag(nh, get_pxflag(attrs));
 	nhop_set_rtflags(nh, attrs->rta_rtflags);
 	if (attrs->rtm_protocol > RTPROT_STATIC)
 		nhop_set_origin(nh, attrs->rtm_protocol);
 
-	*pnh = finalize_nhop(nh, &error);
+	*pnh = finalize_nhop(nh, attrs->rta_dst, &error);
 
 	return (error);
 }
@@ -837,6 +865,7 @@ create_nexthop_from_attrs(struct nl_parsed_route *attrs,
 			nhop_set_broadcast(nh, true);
 		if (attrs->rtm_protocol > RTPROT_STATIC)
 			nhop_set_origin(nh, attrs->rtm_protocol);
+		nhop_set_pxtype_flag(nh, get_pxflag(attrs));
 		nhop_set_rtflags(nh, attrs->rta_rtflags);
 
 		switch (attrs->rtm_type) {
@@ -852,7 +881,7 @@ create_nexthop_from_attrs(struct nl_parsed_route *attrs,
 		/* TODO: return ENOTSUP for other types if strict option is set */
 		}
 
-		nh = finalize_nhop(nh, perror);
+		nh = finalize_nhop(nh, attrs->rta_dst, perror);
 	}
 
 	return (nh);
