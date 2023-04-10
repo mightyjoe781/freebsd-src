@@ -245,12 +245,11 @@ local function make_freebsd_test_trees()
 
       execute("mtree -deUW -f "..SRCTOP.."/etc/mtree/BSD.root.dist -p "..tree)
       print("Creating tree for "..machine_combo)
-      os.execute("cd "..SRCTOP.."/stand")
-
+      -- execute("cd "..SRCTOP.."/stand")
       -- TODO: understand bash code for SHELL
 
-      execute("make -j 100 all buildenv TARGET="..machine.." TARGET_ARCH="..machine_arch)
-      execute("make install DESTDIR="..tree.." MK_MAN=no MK_INSTALL_AS_USER=yes WITHOUT_DEBUG_FILES=yes".." buildenv TARGET="..machine.." TARGET_ARCH="..machine_arch)
+      execute('cd '..SRCTOP..'/stand && SHELL="make -j 100 all" make buildenv TARGET='..machine..' TARGET_ARCH='..machine_arch)
+      execute('cd '..SRCTOP..'/stand && SHELL="make install DESTDIR='..tree..' MK_MAN=no MK_INSTALL_AS_USER=yes WITHOUT_DEBUG_FILES=yes" make buildenv TARGET='..machine..' TARGET_ARCH='..machine_arch)
 
       execute("rm -rf "..tree.."/bin")
       execute("rm -rf "..tree.."/[ac-z]*")
