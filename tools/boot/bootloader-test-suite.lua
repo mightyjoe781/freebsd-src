@@ -136,10 +136,10 @@ local function make_minimal_freebsd_tree(arch)
   end
 
   -- don't have separate /usr
-  execute("ln -s / "..tree.."/usr")
+  execute("ln -s . "..tree.."/usr")
 
   -- snag binaries for simple /etc/rc/file
-  execute("tar -C "..tree.." -xf "..CACHE_DIR.."/"..file.." sbin/reboot sbin/halt sbin/init sbin/sysctl lib/libncursesw.so.9 lib/libc.so lib/libedit.so.8 libexec/ld-elf.so.1")
+  execute("tar -C "..tree.." -xf "..CACHE_DIR.."/"..file.." sbin/reboot sbin/halt sbin/init sbin/sysctl lib/libncursesw.so.9 lib/libc.so.7 lib/libedit.so.8 libexec/ld-elf.so.1")
   
   -- simple etc/rc
   local rc = [[
@@ -148,10 +148,16 @@ sysctl machdep.bootmethod
 echo "RC COMMAND RUNNING -- SUCCESS!!!"
 halt -p
 ]]
-  -- save above rc
+  -- save above rc in a file, but due to weird lua io.open() behaviour, we need create a file first
+  execute("touch "..tree.."/etc/rc")
   local f = io.open(tree.."/etc/rc", "w")
-  f:write(rc)
-  f:close()
+  -- do a nil check
+  if f == nil then
+    die("Failed to open "..tree.."/etc/rc")
+  else
+    f:write(rc)
+    f:close()
+  end
   -- make it executable
   execute("chmod +x "..tree.."/etc/rc")
 
