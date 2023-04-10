@@ -16,7 +16,20 @@ local SCRIPT_DIR = STAND_ROOT.."/scripts"
 local TREE_DIR = STAND_ROOT.."/trees"
 local OVERRIDES = STAND_ROOT.."/overrides"
 
-local SRCTOP = os.execute("make -V SRCTOP")
+-- this doesnt work
+-- local SRCTOP = os.execute("make -V SRCTOP")
+-- capture function for fixing make -V variable spawns new shell
+local function capture_execute(cmd, raw)
+  local f = assert(io.popen(cmd, 'r'))
+  local s = assert(f:read('*a'))
+  f:close()
+  if raw then return s end
+  s = string.gsub(s, '^%s+', '')
+  s = string.gsub(s, '%s+$', '')
+  s = string.gsub(s, '[\n\r]+', ' ')
+  return s
+end
+local SRCTOP = capture_execute("make -V SRCTOP", true)
 
 -- QEMU binary
 local QEMU_BIN = "/usr/local/bin/qemu-system-x86_64"
