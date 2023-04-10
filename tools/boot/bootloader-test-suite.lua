@@ -46,6 +46,22 @@ local function execute(cmd)
     end
 end
 
+-- utility function to write a file and handle all lua io.open() weirdness
+local function write_file(file, data)
+    -- due to weird lua io.open() behaviour, we need create a file first
+    -- direct touch() syscall doesn't work in case folder doesn't exist
+    execute("mkdir -p "..string.match(file, "(.+)/.+$"))
+    execute("touch "..file)
+    local f = io.open(file, "w")
+    -- check if file is even open
+    if f == nil then
+        die("Failed to open file "..file)
+    else
+      f:write(data)
+      f:close()
+    end
+end
+
 -- return machine architecture combo
 local function machine_combo(machine, machine_arch)
   if machine ~= machine_arch then
@@ -149,15 +165,7 @@ echo "RC COMMAND RUNNING -- SUCCESS!!!"
 halt -p
 ]]
   -- save above rc in a file, but due to weird lua io.open() behaviour, we need create a file first
-  execute("touch "..tree.."/etc/rc")
-  local f = io.open(tree.."/etc/rc", "w")
-  -- do a nil check
-  if f == nil then
-    die("Failed to open "..tree.."/etc/rc")
-  else
-    f:write(rc)
-    f:close()
-  end
+  write_file(tree.."/etc/rc", rc)
   -- make it executable
   execute("chmod +x "..tree.."/etc/rc")
 
@@ -203,9 +211,7 @@ boot_verbose=yes
 kern.cfg.order="acpi,fdt"
 ]]
   -- save above loader_conf
-  local f = io.open(tree.."/boot/loader.conf", "w")
-  f:write(loader_conf)
-  f:close()
+  write_file(tree.."/boot/loader.conf", loader_conf)
 
 end
 
@@ -288,9 +294,7 @@ local function make_freebsd_images()
 /dev/ufs/freebsd / ufs rw 1 1
 ]]
     -- save this fstab file
-    local f = io.open(dir2.."/etc/fstab", "w")
-    f:write(fstab)
-    f:close()
+    write_file(dir2.."/etc/fstab", fstab)
 
     -- makefs command
     execute("makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 \
