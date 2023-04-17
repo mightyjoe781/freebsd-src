@@ -1,4 +1,4 @@
-/*	$NetBSD: cd9660.c,v 1.32 2011/08/23 17:09:11 christos Exp $	*/
+/*	$NetBSD: cd9660.c,v 1.56 2019/10/18 04:09:02 msaitoh Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-NetBSD AND BSD-4-Clause
@@ -115,7 +115,7 @@ __FBSDID("$FreeBSD$");
 static void cd9660_finalize_PVD(iso9660_disk *);
 static cd9660node *cd9660_allocate_cd9660node(void);
 static void cd9660_set_defaults(iso9660_disk *);
-static int cd9660_arguments_set_string(const char *, const char *, int,
+static int cd9660_arguments_set_string(const char *, const char *, size_t,
     char, char *);
 static void cd9660_populate_iso_dir_record(
     struct _iso_directory_record_cd9660 *, u_char, u_char, u_char,
@@ -196,7 +196,6 @@ cd9660_set_defaults(iso9660_disk *diskStructure)
 	/* Set up defaults in our own structure */
 	diskStructure->verbose_level = 0;
 	diskStructure->keep_bad_images = 0;
-	diskStructure->follow_sym_links = 0;
 	diskStructure->isoLevel = 2;
 
 	diskStructure->rock_ridge_enabled = 0;
@@ -266,10 +265,6 @@ cd9660_prep_opts(fsinfo_t *fsopts)
 		OPT_NUM('v', "verbose", verbose_level,
 		    0, 2, "Turns on verbose output"),
 
-		OPT_BOOL('h', "help", displayHelp,
-		    "Show help message"),
-		OPT_BOOL('S', "follow-symlinks", follow_sym_links,
-		    "Resolve symlinks in pathnames"),
 		OPT_BOOL('R', "rockridge", rock_ridge_enabled,
 		    "Enable Rock-Ridge extensions"),
 		OPT_BOOL('C', "chrp-boot", chrp_boot,
@@ -324,10 +319,11 @@ cd9660_cleanup_opts(fsinfo_t *fsopts)
 }
 
 static int
-cd9660_arguments_set_string(const char *val, const char *fieldtitle, int length,
-			    char testmode, char * dest)
+cd9660_arguments_set_string(const char *val, const char *fieldtitle,
+    size_t length, char testmode, char *dest)
 {
-	int len, test;
+	size_t len;
+	int test;
 
 	if (val == NULL)
 		warnx("error: '%s' requires a string argument", fieldtitle);
@@ -489,14 +485,6 @@ cd9660_makefs(const char *image, const char *dir, fsnode *root,
 	assert(image != NULL);
 	assert(dir != NULL);
 	assert(root != NULL);
-
-	if (diskStructure->displayHelp) {
-		/*
-		 * Display help here - probably want to put it in
-		 * a separate function
-		 */
-		return;
-	}
 
 	if (diskStructure->verbose_level > 0)
 		printf("%s: image %s directory %s root %p\n", __func__,
@@ -1267,7 +1255,7 @@ cd9660_rrip_move_directory(iso9660_disk *diskStructure, cd9660node *dir)
 		return NULL;
 
 	diskStructure->rock_ridge_move_count++;
-	snprintf(newname, sizeof(newname), "%08i",
+	snprintf(newname, sizeof(newname), "%08u",
 	    diskStructure->rock_ridge_move_count);
 
 	/* Point to old parent */

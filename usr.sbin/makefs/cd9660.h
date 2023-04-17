@@ -1,4 +1,4 @@
-/*	$NetBSD: cd9660.h,v 1.17 2011/06/23 02:35:56 enami Exp $	*/
+/*	$NetBSD: cd9660.h,v 1.21 2015/12/24 15:52:37 christos Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-NetBSD
@@ -238,9 +238,7 @@ typedef struct _iso9660_disk {
 
 	int include_padding_areas;
 
-	int follow_sym_links;
 	int verbose_level;
-	int displayHelp;
 	int keep_bad_images;
 
 	/* SUSP options and variables */
@@ -251,7 +249,7 @@ typedef struct _iso9660_disk {
 	int rock_ridge_enabled;
 	/* Other Rock Ridge Variables */
 	char *rock_ridge_renamed_dir_name;
-	int rock_ridge_move_count;
+	unsigned rock_ridge_move_count;
 	cd9660node *rr_moved_dir;
 
 	int archimedes_enabled;
@@ -284,7 +282,7 @@ typedef struct _iso9660_disk {
 /************ FUNCTIONS **************/
 int			cd9660_valid_a_chars(const char *);
 int			cd9660_valid_d_chars(const char *);
-void			cd9660_uppercase_characters(char *, int);
+void			cd9660_uppercase_characters(char *, size_t);
 
 /* ISO Data Types */
 void			cd9660_721(uint16_t, unsigned char *);

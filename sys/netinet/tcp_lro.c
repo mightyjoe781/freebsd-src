@@ -1179,20 +1179,29 @@ again:
 
 #ifdef TCPHPTS
 static void
-tcp_queue_pkts(struct inpcb *inp, struct tcpcb *tp, struct lro_entry *le)
+tcp_queue_pkts(struct tcpcb *tp, struct lro_entry *le)
 {
-	INP_WLOCK_ASSERT(inp);
-	if (tp->t_in_pkt == NULL) {
-		/* Nothing yet there */
-		tp->t_in_pkt = le->m_head;
-		tp->t_tail_pkt = le->m_last_mbuf;
-	} else {
-		/* Already some there */
-		tp->t_tail_pkt->m_nextpkt = le->m_head;
-		tp->t_tail_pkt = le->m_last_mbuf;
-	}
+
+	INP_WLOCK_ASSERT(tptoinpcb(tp));
+
+	STAILQ_HEAD(, mbuf) q = { le->m_head,
+	    &STAILQ_NEXT(le->m_last_mbuf, m_stailqpkt) };
+	STAILQ_CONCAT(&tp->t_inqueue, &q);
 	le->m_head = NULL;
 	le->m_last_mbuf = NULL;
+}
+
+static bool
+tcp_lro_check_wake_status(struct inpcb *inp)
+{
+	struct tcpcb *tp;
+
+	tp = intotcpcb(inp);
+	if (__predict_false(tp == NULL))
+		return (true);
+	if (tp->t_fb->tfb_early_wake_check != NULL)
+		return ((tp->t_fb->tfb_early_wake_check)(tp));
+	return (false);
 }
 
 static struct mbuf *
@@ -1208,7 +1217,7 @@ tcp_lro_get_last_if_ackcmp(struct lro_ctrl *lc, struct lro_entry *le,
 
 	/* Look at the last mbuf if any in queue */
  	if (can_append_old_cmp) {
-		m = tp->t_tail_pkt;
+		m = STAILQ_LAST(&tp->t_inqueue, mbuf, m_stailqpkt);
 		if (m != NULL && (m->m_flags & M_ACKCMP) != 0) {
 			if (M_TRAILINGSPACE(m) >= sizeof(struct tcp_ackent)) {
 				tcp_lro_log(tp, lc, le, NULL, 23, 0, 0, 0, 0);
@@ -1438,7 +1447,7 @@ tcp_lro_flush_tcphpts(struct lro_ctrl *lc, struct lro_entry *le)
 	if (le->m_head != NULL) {
 		counter_u64_add(tcp_inp_lro_direct_queue, 1);
 		tcp_lro_log(tp, lc, le, NULL, 22, 1, inp->inp_flags2, 0, 1);
-		tcp_queue_pkts(inp, tp, le);
+		tcp_queue_pkts(tp, le);
 	}
 	if (should_wake) {
 		/* Wakeup */
@@ -1751,6 +1760,9 @@ do_bpf_strip_and_compress(struct inpcb *inp, struct lro_ctrl *lc,
 		 * not care about SACKS, then we should wake up.
 		 */
 		*should_wake = true;
+	} else if (*should_wake == false) {
+		/* Wakeup override check if we are false here  */
+		*should_wake = tcp_lro_check_wake_status(inp);
 	}
 	/* Is the ack compressable? */
 	if (can_compress == false)
