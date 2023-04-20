@@ -52,7 +52,7 @@ MACHINE_ARCH:= ${MACHINE_ARCH.${MACHINE}}
 # now because for universe we want to potentially
 # build for multiple MACHINE_ARCH per MACHINE
 # we need more than MACHINE in TARGET_SPEC
-TARGET_SPEC_VARS= MACHINE MACHINE_ARCH
+TARGET_SPEC_VARS?= MACHINE MACHINE_ARCH
 # see dirdeps.mk
 .if ${TARGET_SPEC:Uno:M*,*} != ""
 _tspec := ${TARGET_SPEC:S/,/ /g}
@@ -254,7 +254,6 @@ FREEBSD_REVISION!= sed -n '/^REVISION=/{s,.*=,,;s,",,g;p; }' ${SRCTOP}/sys/conf/
 CROSS_TARGET_FLAGS= -target ${MACHINE_ARCH}-unknown-freebsd${FREEBSD_REVISION}
 CFLAGS+= ${CROSS_TARGET_FLAGS}
 ACFLAGS+= ${CROSS_TARGET_FLAGS}
-LDFLAGS+= -Wl,-m -Wl,elf_${MACHINE_ARCH}_fbsd
 .endif
 
 META_MODE+=	missing-meta=yes
