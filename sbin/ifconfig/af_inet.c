@@ -53,6 +53,7 @@ static const char rcsid[] =
 #include <netdb.h>
 
 #include "ifconfig.h"
+#include "ifconfig_netlink.h"
 
 static struct in_aliasreq in_addreq;
 static struct ifreq in_ridreq;
@@ -60,16 +61,9 @@ static char addr_buf[NI_MAXHOST];	/*for getnameinfo()*/
 extern char *f_inet, *f_addr;
 
 static void
-in_status(int s __unused, const struct ifaddrs *ifa)
+print_addr(struct sockaddr_in *sin)
 {
-	struct sockaddr_in *sin, null_sin;
 	int error, n_flags;
-	
-	memset(&null_sin, 0, sizeof(null_sin));
-
-	sin = (struct sockaddr_in *)ifa->ifa_addr;
-	if (sin == NULL)
-		return;
 
 	if (f_addr != NULL && strcmp(f_addr, "fqdn") == 0)
 		n_flags = 0;
@@ -85,6 +79,19 @@ in_status(int s __unused, const struct ifaddrs *ifa)
 		inet_ntop(AF_INET, &sin->sin_addr, addr_buf, sizeof(addr_buf));
 	
 	printf("\tinet %s", addr_buf);
+}
+
+#ifdef WITHOUT_NETLINK
+static void
+in_status(if_ctx *ctx __unused, const struct ifaddrs *ifa)
+{
+	struct sockaddr_in *sin, null_sin = {};
+
+	sin = (struct sockaddr_in *)ifa->ifa_addr;
+	if (sin == NULL)
+		return;
+
+	print_addr(sin);
 
 	if (ifa->ifa_flags & IFF_POINTOPOINT) {
 		sin = (struct sockaddr_in *)ifa->ifa_dstaddr;
@@ -124,6 +131,50 @@ in_status(int s __unused, const struct ifaddrs *ifa)
 	putchar('\n');
 }
 
+#else
+static struct in_addr
+get_mask(int plen)
+{
+	struct in_addr a;
+
+	a.s_addr = htonl(plen ? ~((1 << (32 - plen)) - 1) : 0);
+
+	return (a);
+}
+
+static void
+in_status_nl(if_ctx *ctx __unused, if_link_t *link, if_addr_t *ifa)
+{
+	struct sockaddr_in *sin = satosin(ifa->ifa_local);
+	int plen = ifa->ifa_prefixlen;
+
+	print_addr(sin);
+
+	if (link->ifi_flags & IFF_POINTOPOINT) {
+		struct sockaddr_in *dst = satosin(ifa->ifa_address);
+
+		printf(" --> %s", inet_ntoa(dst->sin_addr));
+	}
+	if (f_inet != NULL && strcmp(f_inet, "cidr") == 0) {
+		printf("/%d", plen);
+	} else if (f_inet != NULL && strcmp(f_inet, "dotted") == 0)
+		printf(" netmask %s", inet_ntoa(get_mask(plen)));
+	else
+		printf(" netmask 0x%lx", (unsigned long)ntohl(get_mask(plen).s_addr));
+
+	if ((link->ifi_flags & IFF_BROADCAST) && plen != 0)  {
+		struct sockaddr_in *brd = satosin(ifa->ifa_broadcast);
+		if (brd != NULL)
+			printf(" broadcast %s", inet_ntoa(brd->sin_addr));
+	}
+
+	if (ifa->ifaf_vhid != 0)
+		printf(" vhid %d", ifa->ifaf_vhid);
+
+	putchar('\n');
+}
+#endif
+
 #define SIN(x) ((struct sockaddr_in *) &(x))
 static struct sockaddr_in *sintab[] = {
 	SIN(in_ridreq.ifr_addr), SIN(in_addreq.ifra_addr),
@@ -146,7 +197,7 @@ in_getaddr(const char *s, int which)
 		if((p = strrchr(s, '/')) != NULL) {
 			const char *errstr;
 			/* address is `name/masklen' */
-			int masklen;
+			int masklen = 0;
 			struct sockaddr_in *min = sintab[MASK];
 			*p = '\0';
 			if (!isdigit(*(p + 1)))
@@ -176,7 +227,7 @@ in_getaddr(const char *s, int which)
 }
 
 static void
-in_postproc(int s, const struct afswtch *afp, int newaddr, int ifflags)
+in_postproc(if_ctx *ctx __unused, int newaddr, int ifflags)
 {
 	if (sintab[ADDR]->sin_len != 0 && sintab[MASK]->sin_len == 0 &&
 	    newaddr && (ifflags & (IFF_POINTOPOINT | IFF_LOOPBACK)) == 0) {
@@ -227,14 +278,26 @@ in_set_tunnel(int s, struct addrinfo *srcres, struct addrinfo *dstres)
 		warn("SIOCSIFPHYADDR");
 }
 
+static void
+in_set_vhid(int vhid)
+{
+	in_addreq.ifra_vhid = vhid;
+}
+
+
 static struct afswtch af_inet = {
 	.af_name	= "inet",
 	.af_af		= AF_INET,
+#ifdef WITHOUT_NETLINK
 	.af_status	= in_status,
+#else
+	.af_status	= in_status_nl,
+#endif
 	.af_getaddr	= in_getaddr,
 	.af_postproc	= in_postproc,
 	.af_status_tunnel = in_status_tunnel,
 	.af_settunnel	= in_set_tunnel,
+	.af_setvhid	= in_set_vhid,
 	.af_difaddr	= SIOCDIFADDR,
 	.af_aifaddr	= SIOCAIFADDR,
 	.af_ridreq	= &in_ridreq,
