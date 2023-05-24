@@ -162,7 +162,7 @@ local function make_minimal_freebsd_tree(arch)
   local dirs = {"boot/kernel", "boot/defaults", "boot/lua", "boot/loader.conf.d",
       "sbin", "bin", "lib", "libexec", "etc", "dev"}
   for _, dir in ipairs(dirs) do
-    execute("mkdir -p "..tree..dir)
+    execute("mkdir -p "..tree.."/"..dir)
   end
 
   -- don't have separate /usr
@@ -294,9 +294,9 @@ local function make_freebsd_images()
     local src = TREE_DIR.."/"..machine_combo.."/freebsd-esp"
     local dir = TREE_DIR.."/"..machine_combo.."/freebsd"
     local dir2 = TREE_DIR.."/"..machine_combo.."/test-stand"
-    local esp = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".esp"
-    local ufs = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".ufs"
-    local img = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
+    local esp = IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".esp"
+    local ufs = IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".ufs"
+    local img = IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".img"
 
     -- make directories
     execute("mkdir -p "..IMAGE_DIR.."/"..machine_combo)
