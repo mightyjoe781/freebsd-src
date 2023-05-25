@@ -1447,8 +1447,8 @@ pf_setup_pfsync_matching(struct pf_kruleset *rs)
 
 		if (rs->rules[rs_cnt].inactive.rcount) {
 			rs->rules[rs_cnt].inactive.ptr_array =
-			    malloc(sizeof(caddr_t) *
-			    rs->rules[rs_cnt].inactive.rcount,
+			    mallocarray(rs->rules[rs_cnt].inactive.rcount,
+			    sizeof(struct pf_rule **),
 			    M_TEMP, M_NOWAIT);
 
 			if (!rs->rules[rs_cnt].inactive.ptr_array)
@@ -2050,7 +2050,7 @@ pf_rule_to_krule(const struct pf_rule *rule, struct pf_krule *krule)
 
 	pf_pool_to_kpool(&rule->rpool, &krule->rpool);
 
-	/* Don't allow userspace to set evaulations, packets or bytes. */
+	/* Don't allow userspace to set evaluations, packets or bytes. */
 	/* kif, anchor, overload_tbl are not copied over. */
 
 	krule->os_fingerprint = rule->os_fingerprint;

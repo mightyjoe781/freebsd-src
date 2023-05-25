@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright 1996-1998 John D. Polstra.
  * All rights reserved.
@@ -407,7 +407,7 @@ elf_cpu_unload_file(linker_file_t lf __unused)
 }
 
 static void
-ppc32_runtime_resolve()
+ppc32_runtime_resolve(void)
 {
 
 	/*

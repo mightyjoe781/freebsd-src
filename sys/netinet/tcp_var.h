@@ -61,14 +61,14 @@
 #define TCP_EI_STATUS_2MSL		0xb
 #define TCP_EI_STATUS_MAX_VALUE		0xb
 
-#define TCP_HTTP_REQ_LOG_NEW		0x01
-#define TCP_HTTP_REQ_LOG_COMPLETE	0x02
-#define TCP_HTTP_REQ_LOG_FREED		0x03
-#define TCP_HTTP_REQ_LOG_ALLOCFAIL	0x04
-#define TCP_HTTP_REQ_LOG_MOREYET	0x05
-#define TCP_HTTP_REQ_LOG_FORCEFREE	0x06
-#define TCP_HTTP_REQ_LOG_STALE		0x07
-#define TCP_HTTP_REQ_LOG_SEARCH		0x08
+#define TCP_TRK_REQ_LOG_NEW		0x01
+#define TCP_TRK_REQ_LOG_COMPLETE	0x02
+#define TCP_TRK_REQ_LOG_FREED		0x03
+#define TCP_TRK_REQ_LOG_ALLOCFAIL	0x04
+#define TCP_TRK_REQ_LOG_MOREYET	0x05
+#define TCP_TRK_REQ_LOG_FORCEFREE	0x06
+#define TCP_TRK_REQ_LOG_STALE		0x07
+#define TCP_TRK_REQ_LOG_SEARCH		0x08
 
 /************************************************/
 /* Status bits we track to assure no duplicates,
@@ -135,16 +135,15 @@ struct sackhint {
 
 STAILQ_HEAD(tcp_log_stailq, tcp_log_mem);
 
-#define TCP_HTTP_TRACK_FLG_EMPTY 0x00	/* Available */
-#define TCP_HTTP_TRACK_FLG_USED  0x01	/* In use */
-#define TCP_HTTP_TRACK_FLG_OPEN  0x02	/* End is not valid (open range request) */
-#define TCP_HTTP_TRACK_FLG_SEQV  0x04	/* We had a sendfile that touched it  */
-#define TCP_HTTP_TRACK_FLG_COMP  0x08	/* Sendfile as placed the last bits (range req only) */
-#define TCP_HTTP_TRACK_FLG_FSND	 0x10	/* First send has been done into the seq space */
-#define MAX_TCP_HTTP_REQ 5		/* Max we will have at once */
+#define TCP_TRK_TRACK_FLG_EMPTY 0x00	/* Available */
+#define TCP_TRK_TRACK_FLG_USED  0x01	/* In use */
+#define TCP_TRK_TRACK_FLG_OPEN  0x02	/* End is not valid (open range request) */
+#define TCP_TRK_TRACK_FLG_SEQV  0x04	/* We had a sendfile that touched it  */
+#define TCP_TRK_TRACK_FLG_COMP  0x08	/* Sendfile as placed the last bits (range req only) */
+#define TCP_TRK_TRACK_FLG_FSND	 0x10	/* First send has been done into the seq space */
+#define MAX_TCP_TRK_REQ 5		/* Max we will have at once */
 
-#ifdef TCP_REQUEST_TRK
-struct http_sendfile_track {
+struct tcp_sendfile_track {
 	uint64_t timestamp;	/* User sent timestamp */
 	uint64_t start;		/* Start of sendfile offset */
 	uint64_t end;		/* End if not open-range req */
@@ -162,7 +161,6 @@ struct http_sendfile_track {
 	uint32_t hybrid_flags;	/* Hybrid flags on this request */
 };
 
-#endif
 
 /*
  * Change Query responses for a stack switch we create a structure
@@ -314,6 +312,23 @@ struct tcpcb {
 	sbintime_t t_timers[TT_N];
 	sbintime_t t_precisions[TT_N];
 
+	/* HPTS. Used by BBR and Rack stacks. See tcp_hpts.c for more info. */
+	TAILQ_ENTRY(tcpcb)	t_hpts;		/* linkage to HPTS ring */
+	STAILQ_HEAD(, mbuf)	t_inqueue;	/* HPTS input packets queue */
+	uint32_t t_hpts_request;	/* Current hpts request, zero if
+					 * fits in the pacing window. */
+	uint32_t t_hpts_slot;		/* HPTS wheel slot this tcb is. */
+	uint32_t t_hpts_drop_reas;	/* Reason we are dropping the pcb. */
+	uint32_t t_hpts_gencnt;
+	uint16_t t_hpts_cpu;		/* CPU chosen by hpts_cpuid(). */
+	uint16_t t_lro_cpu;		/* CPU derived from LRO. */
+#define	HPTS_CPU_NONE	((uint16_t)-1)
+	enum {
+		IHPTS_NONE = 0,
+		IHPTS_ONQUEUE,
+		IHPTS_MOVING,
+	} t_in_hpts;			/* Is it linked into HPTS? */
+
 	uint32_t t_maxseg:24,		/* maximum segment size */
 		_t_logstate:8;		/* State of "black box" logging */
 	uint32_t t_port:16,		/* Tunneling (over udp) port */
@@ -355,7 +370,6 @@ struct tcpcb {
 	int	t_segqlen;		/* segment reassembly queue length */
 	uint32_t t_segqmbuflen;		/* total reassembly queue byte length */
 	struct	tsegqe_head t_segq;	/* segment reassembly queue */
-	STAILQ_HEAD(, mbuf) t_inqueue;	/* HPTS input queue */
 	uint32_t snd_ssthresh;		/* snd_cwnd size threshold for
 					 * for slow start exponential to
 					 * linear switch
@@ -474,10 +488,10 @@ struct tcpcb {
 	uint8_t _t_logpoint;	/* Used when a BB log points is enabled */
 #ifdef TCP_REQUEST_TRK
 	/* Response tracking addons. */
-	uint8_t t_http_req;	/* Request count */
-	uint8_t t_http_open;	/* Number of open range requests */
-	uint8_t t_http_closed;	/* Number of closed range requests */
-	struct http_sendfile_track t_http_info[MAX_TCP_HTTP_REQ];
+	uint8_t t_tcpreq_req;	/* Request count */
+	uint8_t t_tcpreq_open;	/* Number of open range requests */
+	uint8_t t_tcpreq_closed;	/* Number of closed range requests */
+	struct tcp_sendfile_track t_tcpreq_info[MAX_TCP_TRK_REQ];
 #endif
 };
 #endif	/* _KERNEL || _WANT_TCPCB */
@@ -661,16 +675,6 @@ tcp_output(struct tcpcb *tp)
 	return (rv);
 }
 
-static inline void
-tcp_lro_features_off(struct inpcb *inp)
-{
-	inp->inp_flags2 &= ~(INP_SUPPORTS_MBUFQ|
-	    INP_MBUF_QUEUE_READY|
-	    INP_DONT_SACK_QUEUE|
-	    INP_MBUF_ACKCMP|
-	    INP_MBUF_L_ACKS);
-}
-
 /*
  * tcp_output_unlock()
  * Always returns unlocked, handles drop request from advanced stacks.
@@ -832,9 +836,17 @@ tcp_packets_this_ack(struct tcpcb *tp, tcp_seq ack)
 #define	TF2_ECN_SND_CWR		0x00000040 /* ECN CWR in queue */
 #define	TF2_ECN_SND_ECE		0x00000080 /* ECN ECE in queue */
 #define	TF2_ACE_PERMIT		0x00000100 /* Accurate ECN mode */
+#define	TF2_HPTS_CPU_SET	0x00000200 /* t_hpts_cpu is not random */
 #define	TF2_FBYTES_COMPLETE	0x00000400 /* We have first bytes in and out */
 #define	TF2_ECN_USE_ECT1	0x00000800 /* Use ECT(1) marking on session */
-#define TF2_TCP_ACCOUNTING	0x00010000 /* Do TCP accounting */
+#define TF2_TCP_ACCOUNTING	0x00001000 /* Do TCP accounting */
+#define	TF2_HPTS_CALLS		0x00002000 /* tcp_output() called via HPTS */
+#define	TF2_MBUF_L_ACKS		0x00004000 /* large mbufs for ack compression */
+#define	TF2_MBUF_ACKCMP		0x00008000 /* mbuf ack compression ok */
+#define	TF2_SUPPORTS_MBUFQ	0x00010000 /* Supports the mbuf queue method */
+#define	TF2_MBUF_QUEUE_READY	0x00020000 /* Inputs can be queued */
+#define	TF2_DONT_SACK_QUEUE	0x00040000 /* Don't wake on sack */
+#define	TF2_CANNOT_DO_ECN	0x00080000 /* The stack does not do ECN */
 
 /*
  * Structure to hold TCP options that are only used during segment
@@ -1386,6 +1398,7 @@ int deregister_tcp_functions(struct tcp_function_block *blk, bool quiesce,
     bool force);
 struct tcp_function_block *find_and_ref_tcp_functions(struct tcp_function_set *fs);
 int find_tcp_function_alias(struct tcp_function_block *blk, struct tcp_function_set *fs);
+uint32_t tcp_get_srtt(struct tcpcb *tp, int granularity);
 void tcp_switch_back_to_default(struct tcpcb *tp);
 struct tcp_function_block *
 find_and_ref_tcp_fb(struct tcp_function_block *fs);
@@ -1497,27 +1510,27 @@ struct mbuf *
 int	tcp_stats_init(void);
 void tcp_log_end_status(struct tcpcb *tp, uint8_t status);
 #ifdef TCP_REQUEST_TRK
-void tcp_http_free_a_slot(struct tcpcb *tp, struct http_sendfile_track *ent);
-struct http_sendfile_track *
-tcp_http_find_a_req_that_is_completed_by(struct tcpcb *tp, tcp_seq th_ack, int *ip);
-int tcp_http_check_for_comp(struct tcpcb *tp, tcp_seq ack_point);
+void tcp_req_free_a_slot(struct tcpcb *tp, struct tcp_sendfile_track *ent);
+struct tcp_sendfile_track *
+tcp_req_find_a_req_that_is_completed_by(struct tcpcb *tp, tcp_seq th_ack, int *ip);
+int tcp_req_check_for_comp(struct tcpcb *tp, tcp_seq ack_point);
 int
-tcp_http_is_entry_comp(struct tcpcb *tp, struct http_sendfile_track *ent, tcp_seq ack_point);
-struct http_sendfile_track *
-tcp_http_find_req_for_seq(struct tcpcb *tp, tcp_seq seq);
+tcp_req_is_entry_comp(struct tcpcb *tp, struct tcp_sendfile_track *ent, tcp_seq ack_point);
+struct tcp_sendfile_track *
+tcp_req_find_req_for_seq(struct tcpcb *tp, tcp_seq seq);
 void
-tcp_http_log_req_info(struct tcpcb *tp,
-    struct http_sendfile_track *http, uint16_t slot,
+tcp_req_log_req_info(struct tcpcb *tp,
+    struct tcp_sendfile_track *req, uint16_t slot,
     uint8_t val, uint64_t offset, uint64_t nbytes);
 
 uint32_t
 tcp_estimate_tls_overhead(struct socket *so, uint64_t tls_usr_bytes);
 void
-tcp_http_alloc_req(struct tcpcb *tp, union tcp_log_userdata *user,
+tcp_req_alloc_req(struct tcpcb *tp, union tcp_log_userdata *user,
     uint64_t ts);
 
-struct http_sendfile_track *
-tcp_http_alloc_req_full(struct tcpcb *tp, struct http_req *req, uint64_t ts, int rec_dups);
+struct tcp_sendfile_track *
+tcp_req_alloc_req_full(struct tcpcb *tp, struct tcp_snd_req *req, uint64_t ts, int rec_dups);
 
 
 #endif
@@ -1525,6 +1538,15 @@ tcp_http_alloc_req_full(struct tcpcb *tp, struct http_req *req, uint64_t ts, int
 int tcp_do_ack_accounting(struct tcpcb *tp, struct tcphdr *th, struct tcpopt *to, uint32_t tiwin, int mss);
 #endif
 
+static inline void
+tcp_lro_features_off(struct tcpcb *tp)
+{
+	tp->t_flags2 &= ~(TF2_SUPPORTS_MBUFQ|
+	    TF2_MBUF_QUEUE_READY|
+	    TF2_DONT_SACK_QUEUE|
+	    TF2_MBUF_ACKCMP|
+	    TF2_MBUF_L_ACKS);
+}
 
 static inline void
 tcp_fields_to_host(struct tcphdr *th)

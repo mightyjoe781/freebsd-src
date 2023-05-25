@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (c) 2022 Alexander V. Chernikov <melifaro@FreeBSD.org>
  *
@@ -48,17 +48,18 @@ __FBSDID("$FreeBSD$");
 #include <net/route.h>
 #include <net/route/nhop.h>
 #include <net/route/route_ctl.h>
+#include <netinet/in_var.h>
+#include <netinet6/in6_var.h>
+#include <netinet6/scope6_var.h> /* scope deembedding */
 #include <netlink/netlink.h>
 #include <netlink/netlink_ctl.h>
 #include <netlink/netlink_route.h>
 #include <netlink/route/route_var.h>
 
-#include <netinet6/scope6_var.h> /* scope deembedding */
-
 #define	DEBUG_MOD_NAME	nl_iface
 #define	DEBUG_MAX_LEVEL	LOG_DEBUG3
 #include <netlink/netlink_debug.h>
-_DECLARE_DEBUG(LOG_DEBUG);
+_DECLARE_DEBUG(LOG_INFO);
 
 struct netlink_walkargs {
 	struct nl_writer *nw;
@@ -79,7 +80,8 @@ static SLIST_HEAD(, nl_cloner) nl_cloners = SLIST_HEAD_INITIALIZER(nl_cloners);
 static struct sx rtnl_cloner_lock;
 SX_SYSINIT(rtnl_cloner_lock, &rtnl_cloner_lock, "rtnl cloner lock");
 
-static struct nl_cloner *rtnl_iface_find_cloner_locked(const char *name);
+/* These are external hooks for CARP. */
+extern int	(*carp_get_vhid_p)(struct ifaddr *);
 
 /*
  * RTM_GETLINK request
@@ -192,6 +194,17 @@ get_operstate(struct ifnet *ifp, struct if_state *pstate)
 	}
 }
 
+static void
+get_hwaddr(struct nl_writer *nw, struct ifnet *ifp)
+{
+	struct ifreq ifr = {};
+
+	if (if_gethwaddr(ifp, &ifr) == 0) {
+		nlattr_add(nw, IFLAF_ORIG_HWADDR, if_getaddrlen(ifp),
+		    ifr.ifr_addr.sa_data);
+	}
+}
+
 static unsigned
 ifp_flags_to_netlink(const struct ifnet *ifp)
 {
@@ -229,6 +242,9 @@ dump_sa(struct nl_writer *nw, int attr, const struct sockaddr *sa)
                 addr_len = ((const struct sockaddr_dl *)sa)->sdl_alen;
                 addr_data = LLADDR_CONST((const struct sockaddr_dl *)sa);
                 break;
+	case AF_UNSPEC:
+		/* Ignore empty SAs without warning */
+		return (true);
         default:
                 NL_LOG(LOG_DEBUG2, "unsupported family: %d, skipping", sa->sa_family);
                 return (true);
@@ -279,8 +295,10 @@ dump_iface(struct nl_writer *nw, struct ifnet *ifp, const struct nlmsghdr *hdr,
         nlattr_add_u8(nw, IFLA_PROTO_DOWN, val);
         nlattr_add_u8(nw, IFLA_LINKMODE, val);
 */
-        if ((ifp->if_addr != NULL)) {
-                dump_sa(nw, IFLA_ADDRESS, ifp->if_addr->ifa_addr);
+        if (if_getaddrlen(ifp) != 0) {
+		struct ifaddr *ifa = if_getifaddr(ifp);
+
+                dump_sa(nw, IFLA_ADDRESS, ifa->ifa_addr);
         }
 
         if ((ifp->if_broadcastaddr != NULL)) {
@@ -298,18 +316,20 @@ dump_iface(struct nl_writer *nw, struct ifnet *ifp, const struct nlmsghdr *hdr,
 	if (ifp->if_description != NULL)
 		nlattr_add_string(nw, IFLA_IFALIAS, ifp->if_description);
 
+	/* Store FreeBSD-specific attributes */
+	int off = nlattr_add_nested(nw, IFLA_FREEBSD);
+	if (off != 0) {
+		get_hwaddr(nw, ifp);
+
+		nlattr_set_len(nw, off);
+	}
+
 	get_stats(nw, ifp);
 
 	uint32_t val = (ifp->if_flags & IFF_PROMISC) != 0;
         nlattr_add_u32(nw, IFLA_PROMISCUITY, val);
 
-	sx_slock(&rtnl_cloner_lock);
-	struct nl_cloner *cloner = rtnl_iface_find_cloner_locked(ifp->if_dname);
-	if (cloner != NULL && cloner->dump_f != NULL) {
-		/* Ignore any dump error */
-		cloner->dump_f(ifp, nw);
-	}
-	sx_sunlock(&rtnl_cloner_lock);
+	ifc_dump_ifp_nl(ifp, nw);
 
         if (nlmsg_end(nw))
 		return (true);
@@ -353,7 +373,7 @@ NL_DECLARE_ATTR_PARSER(linfo_parser, nla_p_linfo);
 static const struct nlattr_parser nla_p_if[] = {
 	{ .type = IFLA_IFNAME, .off = _OUT(ifla_ifname), .cb = nlattr_get_string },
 	{ .type = IFLA_MTU, .off = _OUT(ifla_mtu), .cb = nlattr_get_uint32 },
-	{ .type = IFLA_LINK, .off = _OUT(ifi_index), .cb = nlattr_get_uint32 },
+	{ .type = IFLA_LINK, .off = _OUT(ifla_link), .cb = nlattr_get_uint32 },
 	{ .type = IFLA_LINKINFO, .arg = &linfo_parser, .cb = nlattr_get_nested },
 	{ .type = IFLA_IFALIAS, .off = _OUT(ifla_ifalias), .cb = nlattr_get_string },
 	{ .type = IFLA_GROUP, .off = _OUT(ifla_group), .cb = nlattr_get_string },
@@ -545,21 +565,16 @@ create_link(struct nlmsghdr *hdr, struct nl_parsed_link *lattrs,
 		return (EINVAL);
 	}
 
-	bool found = false;
-	int error = 0;
+	struct ifc_data_nl ifd = {
+		.flags = IFC_F_CREATE,
+		.lattrs = lattrs,
+		.bm = bm,
+		.npt = npt,
+	};
+	if (ifc_create_ifp_nl(lattrs->ifla_ifname, &ifd) && ifd.error == 0)
+		nl_store_ifp_cookie(npt, ifd.ifp);
 
-	sx_slock(&rtnl_cloner_lock);
-	struct nl_cloner *cloner = rtnl_iface_find_cloner_locked(lattrs->ifla_cloner);
-	if (cloner != NULL) {
-		found = true;
-		error = cloner->create_f(lattrs, bm, nlp, npt);
-	}
-	sx_sunlock(&rtnl_cloner_lock);
-
-	if (!found)
-		error = generic_cloner.create_f(lattrs, bm, nlp, npt);
-
-	return (error);
+	return (ifd.error);
 }
 
 static int
@@ -602,31 +617,20 @@ modify_link(struct nlmsghdr *hdr, struct nl_parsed_link *lattrs,
 	MPASS(ifp != NULL);
 
 	/*
-	 * There can be multiple kinds of interfaces:
-	 * 1) cloned, with additional options
-	 * 2) cloned, but w/o additional options
-	 * 3) non-cloned (e.g. "physical).
-	 *
-	 * Thus, try to find cloner-specific callback and fallback to the
-	 * "default" handler if not found.
+	 * Modification request can address either
+	 * 1) cloned interface, in which case we call the cloner-specific
+	 *  modification routine
+	 * or
+	 * 2) non-cloned (e.g. "physical") interface, in which case we call
+	 *  generic modification routine
 	 */
-	bool found = false;
-	int error = 0;
-
-	sx_slock(&rtnl_cloner_lock);
-	struct nl_cloner *cloner = rtnl_iface_find_cloner_locked(ifp->if_dname);
-	if (cloner != NULL) {
-		found = true;
-		error = cloner->modify_f(ifp, lattrs, bm, nlp, npt);
-	}
-	sx_sunlock(&rtnl_cloner_lock);
-
-	if (!found)
-		error = generic_cloner.modify_f(ifp, lattrs, bm, nlp, npt);
+	struct ifc_data_nl ifd = { .lattrs = lattrs, .bm = bm, .npt = npt };
+	if (!ifc_modify_ifp_nl(ifp, &ifd))
+		ifd.error = nl_modify_ifp_generic(ifp, lattrs, bm, npt);
 
 	if_rele(ifp);
 
-	return (error);
+	return (ifd.error);
 }
 
 
@@ -648,15 +652,59 @@ rtnl_handle_newlink(struct nlmsghdr *hdr, struct nlpcb *nlp, struct nl_pstate *n
 		return (modify_link(hdr, &attrs, &bm, nlp, npt));
 }
 
+static void
+set_scope6(struct sockaddr *sa, uint32_t ifindex)
+{
+#ifdef INET6
+	if (sa != NULL && sa->sa_family == AF_INET6) {
+		struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)sa;
+
+		if (IN6_IS_ADDR_LINKLOCAL(&sa6->sin6_addr))
+			in6_set_unicast_scopeid(&sa6->sin6_addr, ifindex);
+	}
+#endif
+}
+
+static bool
+check_sa_family(const struct sockaddr *sa, int family, const char *attr_name,
+    struct nl_pstate *npt)
+{
+	if (sa == NULL || sa->sa_family == family)
+		return (true);
+
+	nlmsg_report_err_msg(npt, "wrong family for %s attribute: %d != %d",
+	    attr_name, family, sa->sa_family);
+	return (false);
+}
+
 struct nl_parsed_ifa {
-	uint8_t		ifa_family;
-	uint8_t		ifa_prefixlen;
-	uint8_t		ifa_scope;
-	uint32_t	ifa_index;
-	uint32_t	ifa_flags;
-	struct sockaddr	*ifa_address;
-	struct sockaddr	*ifa_local;
+	uint8_t			ifa_family;
+	uint8_t			ifa_prefixlen;
+	uint8_t			ifa_scope;
+	uint32_t		ifa_index;
+	uint32_t		ifa_flags;
+	uint32_t		ifaf_vhid;
+	uint32_t		ifaf_flags;
+	struct sockaddr		*ifa_addr;
+	struct sockaddr		*ifa_dst;
+	struct sockaddr		*ifa_broadcast;
+	struct ifa_cacheinfo	*ifa_cacheinfo;
+	struct sockaddr		*f_ifa_addr;
+	struct sockaddr		*f_ifa_dst;
 };
+
+static int
+nlattr_get_cinfo(struct nlattr *nla, struct nl_pstate *npt,
+    const void *arg __unused, void *target)
+{
+	if (__predict_false(NLA_DATA_LEN(nla) != sizeof(struct ifa_cacheinfo))) {
+		NLMSG_REPORT_ERR_MSG(npt, "nla type %d size(%u) is not ifa_cacheinfo",
+		    nla->nla_type, NLA_DATA_LEN(nla));
+		return (EINVAL);
+	}
+	*((struct ifa_cacheinfo **)target) = (struct ifa_cacheinfo *)NL_RTA_DATA(nla);
+	return (0);
+}
 
 #define	_IN(_field)	offsetof(struct ifaddrmsg, _field)
 #define	_OUT(_field)	offsetof(struct nl_parsed_ifa, _field)
@@ -668,14 +716,66 @@ static const struct nlfield_parser nlf_p_ifa[] = {
 	{ .off_in = _IN(ifa_index), .off_out = _OUT(ifa_index), .cb = nlf_get_u32 },
 };
 
+static const struct nlattr_parser nla_p_ifa_fbsd[] = {
+	{ .type = IFAF_VHID, .off = _OUT(ifaf_vhid), .cb = nlattr_get_uint32 },
+	{ .type = IFAF_FLAGS, .off = _OUT(ifaf_flags), .cb = nlattr_get_uint32 },
+};
+NL_DECLARE_ATTR_PARSER(ifa_fbsd_parser, nla_p_ifa_fbsd);
+
 static const struct nlattr_parser nla_p_ifa[] = {
-	{ .type = IFA_ADDRESS, .off = _OUT(ifa_address), .cb = nlattr_get_ip },
-	{ .type = IFA_LOCAL, .off = _OUT(ifa_local), .cb = nlattr_get_ip },
+	{ .type = IFA_ADDRESS, .off = _OUT(ifa_addr), .cb = nlattr_get_ip },
+	{ .type = IFA_LOCAL, .off = _OUT(ifa_dst), .cb = nlattr_get_ip },
+	{ .type = IFA_BROADCAST, .off = _OUT(ifa_broadcast), .cb = nlattr_get_ip },
+	{ .type = IFA_CACHEINFO, .off = _OUT(ifa_cacheinfo), .cb = nlattr_get_cinfo },
 	{ .type = IFA_FLAGS, .off = _OUT(ifa_flags), .cb = nlattr_get_uint32 },
+	{ .type = IFA_FREEBSD, .arg = &ifa_fbsd_parser, .cb = nlattr_get_nested },
 };
 #undef _IN
 #undef _OUT
-NL_DECLARE_PARSER(ifaddrmsg_parser, struct ifaddrmsg, nlf_p_ifa, nla_p_ifa);
+
+static bool
+post_p_ifa(void *_attrs, struct nl_pstate *npt)
+{
+	struct nl_parsed_ifa *attrs = (struct nl_parsed_ifa *)_attrs;
+
+	if (!check_sa_family(attrs->ifa_addr, attrs->ifa_family, "IFA_ADDRESS", npt))
+		return (false);
+	if (!check_sa_family(attrs->ifa_dst, attrs->ifa_family, "IFA_LOCAL", npt))
+		return (false);
+	if (!check_sa_family(attrs->ifa_broadcast, attrs->ifa_family, "IFA_BROADADDR", npt))
+		return (false);
+
+	set_scope6(attrs->ifa_addr, attrs->ifa_index);
+	set_scope6(attrs->ifa_dst, attrs->ifa_index);
+
+	/*
+	 * Map the Netlink attributes to FreeBSD ifa layout.
+	 * If only IFA_ADDRESS or IFA_LOCAL is set OR
+	 * both are set to the same value => ifa is not broadcast
+	 * and the attribute value contains interface address.
+	 *
+	 * Otherwise (both IFA_ADDRESS and IFA_LOCAL are set and
+	 * different), IFA_LOCAL contains an interface address and
+	 * IFA_ADDRESS contains peer address.
+	 */
+	struct sockaddr *addr, *dst;
+
+	addr = attrs->ifa_addr;
+	if ((dst = attrs->ifa_dst) != NULL) {
+		if (addr != NULL && !sa_equal(addr, dst)) {
+			/* Ptp address */
+			attrs->ifa_addr = dst;
+			attrs->ifa_dst = addr;
+		} else {
+			attrs->ifa_addr = dst;
+			attrs->ifa_dst = NULL;
+		}
+	}
+
+	return (true);
+}
+
+NL_DECLARE_PARSER_EXT(ifa_parser, struct ifaddrmsg, NULL, nlf_p_ifa, nla_p_ifa, post_p_ifa);
 
 
 /*
@@ -770,6 +870,71 @@ get_sa_plen(const struct sockaddr *sa)
         return (0);
 }
 
+#ifdef INET6
+static uint32_t
+in6_flags_to_nl(uint32_t flags)
+{
+	uint32_t nl_flags = 0;
+
+	if (flags & IN6_IFF_TEMPORARY)
+		nl_flags |= IFA_F_TEMPORARY;
+	if (flags & IN6_IFF_NODAD)
+		nl_flags |= IFA_F_NODAD;
+	if (flags & IN6_IFF_DEPRECATED)
+		nl_flags |= IFA_F_DEPRECATED;
+	if (flags & IN6_IFF_TENTATIVE)
+		nl_flags |= IFA_F_TENTATIVE;
+	if ((flags & (IN6_IFF_AUTOCONF|IN6_IFF_TEMPORARY)) == 0)
+		flags |= IFA_F_PERMANENT;
+	if (flags & IN6_IFF_DUPLICATED)
+		flags |= IFA_F_DADFAILED;
+	return (nl_flags);
+}
+
+static uint32_t
+nl_flags_to_in6(uint32_t flags)
+{
+	uint32_t in6_flags = 0;
+
+	if (flags & IFA_F_TEMPORARY)
+		in6_flags |= IN6_IFF_TEMPORARY;
+	if (flags & IFA_F_NODAD)
+		in6_flags |= IN6_IFF_NODAD;
+	if (flags & IFA_F_DEPRECATED)
+		in6_flags |= IN6_IFF_DEPRECATED;
+	if (flags & IFA_F_TENTATIVE)
+		in6_flags |= IN6_IFF_TENTATIVE;
+	if (flags & IFA_F_DADFAILED)
+		in6_flags |= IN6_IFF_DUPLICATED;
+
+	return (in6_flags);
+}
+
+static void
+export_cache_info6(struct nl_writer *nw, const struct in6_ifaddr *ia)
+{
+	struct ifa_cacheinfo ci = {
+		.cstamp = ia->ia6_createtime * 1000,
+		.tstamp = ia->ia6_updatetime * 1000,
+		.ifa_prefered = ia->ia6_lifetime.ia6t_pltime,
+		.ifa_valid = ia->ia6_lifetime.ia6t_vltime,
+	};
+
+	nlattr_add(nw, IFA_CACHEINFO, sizeof(ci), &ci);
+}
+#endif
+
+static void
+export_cache_info(struct nl_writer *nw, struct ifaddr *ifa)
+{
+	switch (ifa->ifa_addr->sa_family) {
+#ifdef INET6
+	case AF_INET6:
+		export_cache_info6(nw, (struct in6_ifaddr *)ifa);
+		break;
+#endif
+	}
+}
 
 /*
  * {'attrs': [('IFA_ADDRESS', '12.0.0.1'),
@@ -784,6 +949,7 @@ dump_iface_addr(struct nl_writer *nw, struct ifnet *ifp, struct ifaddr *ifa,
 {
         struct ifaddrmsg *ifamsg;
         struct sockaddr *sa = ifa->ifa_addr;
+        struct sockaddr *sa_dst = ifa->ifa_dstaddr;
 
         NL_LOG(LOG_DEBUG3, "dumping ifa %p type %s(%d) for interface %s",
             ifa, rib_print_family(sa->sa_family), sa->sa_family, if_name(ifp));
@@ -798,8 +964,9 @@ dump_iface_addr(struct nl_writer *nw, struct ifnet *ifp, struct ifaddr *ifa,
         ifamsg->ifa_scope = ifa_get_scope(ifa);
         ifamsg->ifa_index = ifp->if_index;
 
-	if (ifp->if_flags & IFF_POINTOPOINT) {
-		dump_sa(nw, IFA_ADDRESS, ifa->ifa_dstaddr);
+	if ((ifp->if_flags & IFF_POINTOPOINT) && sa_dst != NULL && sa_dst->sa_family != 0) {
+		/* P2P interface may have IPv6 LL with no dst address */
+		dump_sa(nw, IFA_ADDRESS, sa_dst);
 		dump_sa(nw, IFA_LOCAL, sa);
 	} else {
 		dump_sa(nw, IFA_ADDRESS, sa);
@@ -817,8 +984,34 @@ dump_iface_addr(struct nl_writer *nw, struct ifnet *ifp, struct ifaddr *ifa,
 
         nlattr_add_string(nw, IFA_LABEL, if_name(ifp));
 
-        uint32_t val = 0; // ifa->ifa_flags;
-        nlattr_add_u32(nw, IFA_FLAGS, val);
+        uint32_t nl_ifa_flags = 0;
+#ifdef INET6
+	if (sa->sa_family == AF_INET6) {
+		struct in6_ifaddr *ia = (struct in6_ifaddr *)ifa;
+		nl_ifa_flags = in6_flags_to_nl(ia->ia6_flags);
+	}
+#endif
+        nlattr_add_u32(nw, IFA_FLAGS, nl_ifa_flags);
+
+	export_cache_info(nw, ifa);
+
+	/* Store FreeBSD-specific attributes */
+	int off = nlattr_add_nested(nw, IFA_FREEBSD);
+	if (off != 0) {
+		if (ifa->ifa_carp != NULL && carp_get_vhid_p != NULL) {
+			uint32_t vhid  = (uint32_t)(*carp_get_vhid_p)(ifa);
+			nlattr_add_u32(nw, IFAF_VHID, vhid);
+		}
+#ifdef INET6
+		if (sa->sa_family == AF_INET6) {
+			uint32_t ifa_flags = ((struct in6_ifaddr *)ifa)->ia6_flags;
+
+			nlattr_add_u32(nw, IFAF_FLAGS, ifa_flags);
+		}
+#endif
+
+		nlattr_set_len(nw, off);
+	}
 
 	if (nlmsg_end(nw))
 		return (true);
@@ -857,7 +1050,7 @@ rtnl_handle_getaddr(struct nlmsghdr *hdr, struct nlpcb *nlp, struct nl_pstate *n
 	int error = 0;
 
 	struct nl_parsed_ifa attrs = {};
-	error = nl_parse_nlmsg(hdr, &ifaddrmsg_parser, npt, &attrs);
+	error = nl_parse_nlmsg(hdr, &ifa_parser, npt, &attrs);
 	if (error != 0)
 		return (error);
 
@@ -897,6 +1090,215 @@ rtnl_handle_getaddr(struct nlmsghdr *hdr, struct nlpcb *nlp, struct nl_pstate *n
 
 	return (error);
 }
+
+#ifdef INET
+static int
+handle_newaddr_inet(struct nlmsghdr *hdr, struct nl_parsed_ifa *attrs,
+    struct ifnet *ifp, struct nlpcb *nlp, struct nl_pstate *npt)
+{
+	int plen = attrs->ifa_prefixlen;
+	int if_flags = if_getflags(ifp);
+
+	if (plen > 32) {
+		nlmsg_report_err_msg(npt, "invalid ifa_prefixlen");
+		return (EINVAL);
+	};
+
+	if (if_flags & IFF_POINTOPOINT) {
+		if (attrs->ifa_addr == NULL || attrs->ifa_dst == NULL) {
+			nlmsg_report_err_msg(npt, "Empty IFA_LOCAL/IFA_ADDRESS");
+			return (EINVAL);
+		}
+	} else {
+		if (attrs->ifa_addr == NULL) {
+			nlmsg_report_err_msg(npt, "Empty IFA_LOCAL/IFA_ADDRESS");
+			return (EINVAL);
+		}
+		attrs->ifa_dst = attrs->ifa_broadcast;
+
+		/* Generate broadcast address if not set */
+		if ((if_flags & IFF_BROADCAST) && attrs->ifa_dst == NULL) {
+			uint32_t s_baddr;
+			struct sockaddr_in *sin_brd;
+
+			if (plen == 31)
+				s_baddr = INADDR_BROADCAST; /* RFC 3021 */
+			else {
+				struct sockaddr_in *addr;
+				uint32_t s_mask;
+
+				addr = (struct sockaddr_in *)attrs->ifa_addr;
+				s_mask = htonl(plen ? ~((1 << (32 - plen)) - 1) : 0);
+				s_baddr = addr->sin_addr.s_addr | ~s_mask;
+			}
+
+			sin_brd = (struct sockaddr_in *)npt_alloc(npt, sizeof(*sin_brd));
+			if (sin_brd == NULL)
+				return (ENOMEM);
+			sin_brd->sin_family = AF_INET;
+			sin_brd->sin_len = sizeof(*sin_brd);
+			sin_brd->sin_addr.s_addr = s_baddr;
+			attrs->ifa_dst = (struct sockaddr *)sin_brd;
+		}
+	}
+
+	struct sockaddr_in mask = {
+		.sin_len = sizeof(struct sockaddr_in),
+		.sin_family = AF_INET,
+		.sin_addr.s_addr = htonl(plen ? ~((1 << (32 - plen)) - 1) : 0),
+	};
+	struct in_aliasreq req = {
+		.ifra_addr = *((struct sockaddr_in *)attrs->ifa_addr),
+		.ifra_mask = mask,
+		.ifra_vhid = attrs->ifaf_vhid,
+	};
+	if (attrs->ifa_dst != NULL)
+		req.ifra_dstaddr = *((struct sockaddr_in *)attrs->ifa_dst);
+
+	int error = in_control(NULL, SIOCAIFADDR, &req, ifp, curthread);
+#ifdef INET6
+	if (error == 0 && !(if_flags & IFF_UP) && (if_getflags(ifp) & IFF_UP))
+		in6_if_up(ifp);
+#endif
+	return (error);
+}
+
+static int
+handle_deladdr_inet(struct nlmsghdr *hdr, struct nl_parsed_ifa *attrs,
+    struct ifnet *ifp, struct nlpcb *nlp, struct nl_pstate *npt)
+{
+	if (attrs->ifa_addr == NULL) {
+		nlmsg_report_err_msg(npt, "empty IFA_ADDRESS/IFA_LOCAL");
+		return (EINVAL);
+	}
+
+	struct in_aliasreq req = {
+		.ifra_addr = *((struct sockaddr_in *)attrs->ifa_addr),
+	};
+
+	return (in_control(NULL, SIOCDIFADDR, &req, ifp, curthread));
+}
+#endif
+
+#ifdef INET6
+static int
+handle_newaddr_inet6(struct nlmsghdr *hdr, struct nl_parsed_ifa *attrs,
+    struct ifnet *ifp, struct nlpcb *nlp, struct nl_pstate *npt)
+{
+	if (attrs->ifa_prefixlen > 128) {
+		nlmsg_report_err_msg(npt, "invalid ifa_prefixlen");
+		return (EINVAL);
+	}
+
+	if (attrs->ifa_addr == NULL) {
+		nlmsg_report_err_msg(npt, "Empty IFA_LOCAL/IFA_ADDRESS");
+		return (EINVAL);
+	}
+
+	/* TODO: Clarify addition of prefixes on p2p interfaces w/o ifa_dst */
+
+	uint32_t flags = nl_flags_to_in6(attrs->ifa_flags) | attrs->ifaf_flags;
+
+	uint32_t pltime = 0, vltime = 0;
+	if (attrs->ifa_cacheinfo != 0) {
+		pltime = attrs->ifa_cacheinfo->ifa_prefered;
+		vltime = attrs->ifa_cacheinfo->ifa_valid;
+	}
+
+	struct sockaddr_in6 mask = {
+		.sin6_len = sizeof(struct sockaddr_in6),
+		.sin6_family = AF_INET6,
+	};
+	ip6_writemask(&mask.sin6_addr, attrs->ifa_prefixlen);
+
+	struct in6_aliasreq req = {
+		.ifra_addr = *((struct sockaddr_in6 *)attrs->ifa_addr),
+		.ifra_prefixmask = mask,
+		.ifra_flags = flags,
+		.ifra_lifetime = { .ia6t_vltime = vltime, .ia6t_pltime = pltime },
+		.ifra_vhid = attrs->ifaf_vhid,
+	};
+	if (attrs->ifa_dst != NULL)
+		req.ifra_dstaddr = *((struct sockaddr_in6 *)attrs->ifa_dst);
+
+	return (in6_control(NULL, SIOCAIFADDR_IN6, &req, ifp, curthread));
+}
+
+static int
+handle_deladdr_inet6(struct nlmsghdr *hdr, struct nl_parsed_ifa *attrs,
+    struct ifnet *ifp, struct nlpcb *nlp, struct nl_pstate *npt)
+{
+	if (attrs->ifa_addr == NULL) {
+		nlmsg_report_err_msg(npt, "Empty IFA_LOCAL/IFA_ADDRESS");
+		return (EINVAL);
+	}
+
+	struct in6_aliasreq req = {
+		.ifra_addr = *((struct sockaddr_in6 *)attrs->ifa_addr),
+	};
+
+	return (in6_control(NULL, SIOCDIFADDR_IN6, &req, ifp, curthread));
+}
+#endif
+
+
+static int
+rtnl_handle_addr(struct nlmsghdr *hdr, struct nlpcb *nlp, struct nl_pstate *npt)
+{
+	struct epoch_tracker et;
+	int error;
+
+	struct nl_parsed_ifa attrs = {};
+	error = nl_parse_nlmsg(hdr, &ifa_parser, npt, &attrs);
+	if (error != 0)
+		return (error);
+
+	NET_EPOCH_ENTER(et);
+	struct ifnet *ifp = ifnet_byindex_ref(attrs.ifa_index);
+	NET_EPOCH_EXIT(et);
+
+	if (ifp == NULL) {
+		nlmsg_report_err_msg(npt, "Unable to find interface with index %u",
+		    attrs.ifa_index);
+		return (ENOENT);
+	}
+
+#if defined(INET) || defined(INET6)
+	bool new = hdr->nlmsg_type == NL_RTM_NEWADDR;
+#endif
+
+	/*
+	 * TODO: Properly handle NLM_F_CREATE / NLM_F_EXCL.
+	 * The current ioctl-based KPI always does an implicit create-or-replace.
+	 * It is not possible to specify fine-grained options.
+	 */
+
+	switch (attrs.ifa_family) {
+#ifdef INET
+	case AF_INET:
+		if (new)
+			error = handle_newaddr_inet(hdr, &attrs, ifp, nlp, npt);
+		else
+			error = handle_deladdr_inet(hdr, &attrs, ifp, nlp, npt);
+		break;
+#endif
+#ifdef INET6
+	case AF_INET6:
+		if (new)
+			error = handle_newaddr_inet6(hdr, &attrs, ifp, nlp, npt);
+		else
+			error = handle_deladdr_inet6(hdr, &attrs, ifp, nlp, npt);
+		break;
+#endif
+	default:
+		error = EAFNOSUPPORT;
+	}
+
+	if_rele(ifp);
+
+	return (error);
+}
+
 
 static void
 rtnl_handle_ifaddr(void *arg __unused, struct ifaddr *ifa, int cmd)
@@ -1011,16 +1413,22 @@ static const struct rtnl_cmd_handler cmd_handlers[] = {
 	{
 		.cmd = NL_RTM_NEWADDR,
 		.name = "RTM_NEWADDR",
-		.cb = &rtnl_handle_getaddr,
+		.cb = &rtnl_handle_addr,
+		.priv = PRIV_NET_ADDIFADDR,
+		.flags = RTNL_F_NOEPOCH,
 	},
 	{
 		.cmd = NL_RTM_DELADDR,
 		.name = "RTM_DELADDR",
-		.cb = &rtnl_handle_getaddr,
+		.cb = &rtnl_handle_addr,
+		.priv = PRIV_NET_DELIFADDR,
+		.flags = RTNL_F_NOEPOCH,
 	},
 };
 
-static const struct nlhdr_parser *all_parsers[] = { &ifmsg_parser, &ifaddrmsg_parser };
+static const struct nlhdr_parser *all_parsers[] = {
+	&ifmsg_parser, &ifa_parser, &ifa_fbsd_parser,
+};
 
 void
 rtnl_iface_add_cloner(struct nl_cloner *cloner)
@@ -1036,19 +1444,6 @@ rtnl_iface_del_cloner(struct nl_cloner *cloner)
 	sx_xlock(&rtnl_cloner_lock);
 	SLIST_REMOVE(&nl_cloners, cloner, nl_cloner, next);
 	sx_xunlock(&rtnl_cloner_lock);
-}
-
-static struct nl_cloner *
-rtnl_iface_find_cloner_locked(const char *name)
-{
-	struct nl_cloner *cloner;
-
-	SLIST_FOREACH(cloner, &nl_cloners, next) {
-		if (!strcmp(name, cloner->name))
-			return (cloner);
-	}
-
-	return (NULL);
 }
 
 void
@@ -1067,7 +1462,6 @@ rtnl_ifaces_init(void)
 	    ifnet_link_event, rtnl_handle_iflink, NULL,
 	    EVENTHANDLER_PRI_ANY);
 	NL_VERIFY_PARSERS(all_parsers);
-	rtnl_iface_drivers_register();
 	rtnl_register_messages(cmd_handlers, NL_ARRAY_LEN(cmd_handlers));
 }
 
