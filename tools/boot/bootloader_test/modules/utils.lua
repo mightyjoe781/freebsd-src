@@ -22,4 +22,26 @@ function utils.generate_regex(arch, filesystem, interface, encryption)
     return arch .. '-' .. filesystem .. '-' .. interface .. '-' .. encryption
 end
 
+-- remove duplicates from a table
+function utils.remove_duplicates(t)
+    local hash = {}
+    local res = {}
+    for _, v in ipairs(t) do
+        if not hash[v] then
+            res[#res+1] = v
+            hash[v] = true
+        end
+    end
+    return res
+end
+
+-- load a data file
+function utils.load_data_file(file)
+    local f = io.open(file, "rb")
+    if not f then return nil end
+    local content = f:read("*all")
+    f:close()
+    return content
+end
+
 return utils

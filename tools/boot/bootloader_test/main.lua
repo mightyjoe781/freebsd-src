@@ -79,13 +79,18 @@
       way)
 ]]--
 
+-- config parser
 local utils = require 'modules.utils'
+local parser = require 'modules.parser'
+local logger = require 'modules.logger'
+-- set log level to info
+logger.level = "debug"
 -- this script will be run using flua and parse command line options
 local getopt = require 'posix.unistd'.getopt
 local args = {}
 
 local last_index = 1
-for r, optarg, optind in getopt(arg, 'ha:f:i:e:c:bt') do
+for r, optarg, optind in getopt(arg, 'a:f:i:e:c:btvh') do
     if r == '?' then
         return print('unrecognized option', arg[optind-1])
     end
@@ -99,27 +104,22 @@ for r, optarg, optind in getopt(arg, 'ha:f:i:e:c:bt') do
         print '-c ARG  configuration file to use for the build and test'
         print '-b      build the bootloader only'
         print '-t      test the bootloader only'
+        print '-v      verbose output'
     elseif r == 'a' then
         args.arch = optarg
-        print('we were passed', r, optarg)
     elseif r == 'f' then
         args.filesystem = optarg
-        print('we were passed', r, optarg)
     elseif r == 'i' then
         args.interface = optarg
-        print('we were passed', r, optarg)
     elseif r == 'e' then
         args.encryption = optarg
-        print('we were passed', r, optarg)
     elseif r == 'c' then
         args.config = optarg
-        print('we were passed', r, optarg)
     end
 end
 
 -- generate the config regex from the args : <arch>-<filesystem>-<interface>-<encryption>
--- if any of the args is not passed, use '*' for that arg
-print(utils.generate_regex(args.arch, args.filesystem, args.interface, args.encryption))
+logger.info("Regex Generated from command line args: ",utils.generate_regex(args.arch, args.filesystem, args.interface, args.encryption))
 
 for i = last_index, #arg do
    print(i, arg[i])
