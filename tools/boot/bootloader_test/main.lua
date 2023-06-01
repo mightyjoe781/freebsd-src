@@ -79,15 +79,71 @@
       way)
 ]]--
 
--- config parser
-local utils = require 'modules.utils'
-local parser = require 'modules.parser'
-local logger = require 'modules.logger'
+--------------------------------------------------------------------------------
+--                                Import modules
+--------------------------------------------------------------------------------
+local utils         = require 'modules.utils'           -- utility functions
+local parser        = require 'modules.parser'          -- parser for input.lua
+local logger        = require 'modules.logger'          -- logger for logging
+local build         = require 'modules.build'           -- build module
+local test          = require 'modules.test'            -- test module
+local combination   = require 'modules.combination'     -- combination module
+local getopt        = require 'posix.unistd'.getopt     -- getopt module
+
+--------------------------------------------------------------------------------
+--                            Define global variables
+--------------------------------------------------------------------------------
+-- this script will be run using flua and parse command line options
+
 -- set log level to info
 logger.level = "debug"
--- this script will be run using flua and parse command line options
-local getopt = require 'posix.unistd'.getopt
-local args = {}
+
+local args = {
+    architecture = "*",
+    filesystem = "*",
+    interface = "*",
+    encryption = "*",
+    config = "input.lua",
+    build = false,
+    test = false,
+    verbose = false
+}
+
+--------------------------------------------------------------------------------
+--                              Main function
+--------------------------------------------------------------------------------
+
+-- usage function
+local function usage()
+    print [[
+usage: main.lua [-bhtv] [-a ARG] [-f ARG] [-i ARG] [-e ARG] [-c ARG]
+    ]]
+end
+
+-- man page
+local function man_page()
+    print [[
+NAME
+    main.lua - build and test the bootloader
+SYNOPSIS
+    main.lua [-bhtv] [-a ARG] [-f ARG] [-i ARG] [-e ARG] [-c ARG]
+DESCRIPTION
+    This script will read the input.lua file and parse it to get the configurations
+    for the bootloader build and test in various recipes(envs).
+OPTIONS
+    -h      print this help text
+    -a ARG  architecture to build and test for
+    -f ARG  file-system to use for the image
+    -i ARG  booting interface to use for the image
+    -e ARG  encryption to use for the image
+    -c ARG  configuration file to use for the build and test
+    -b      build the bootloader only
+    -t      test the bootloader only
+
+AUTHOR
+    Sudhanshu Mohan Kashyap <
+    ]]
+end
 
 local last_index = 1
 for r, optarg, optind in getopt(arg, 'a:f:i:e:c:btvh') do
@@ -96,15 +152,11 @@ for r, optarg, optind in getopt(arg, 'a:f:i:e:c:btvh') do
     end
     last_index = optind
     if r == 'h' then
-        print '-h      print this help text'
-        print '-a ARG  architecture to build and test for'
-        print '-f ARG  file-system to use for the image'
-        print '-i ARG  booting interface to use for the image'
-        print '-e ARG  encryption to use for the image'
-        print '-c ARG  configuration file to use for the build and test'
-        print '-b      build the bootloader only'
-        print '-t      test the bootloader only'
-        print '-v      verbose output'
+        -- print usage
+        -- usage()
+        man_page()
+        -- exit with success
+        os.exit(0)
     elseif r == 'a' then
         args.arch = optarg
     elseif r == 'f' then
@@ -115,12 +167,63 @@ for r, optarg, optind in getopt(arg, 'a:f:i:e:c:btvh') do
         args.encryption = optarg
     elseif r == 'c' then
         args.config = optarg
+    elseif r == 'b' then
+        args.build = true
+    elseif r == 't' then
+        args.test = true
+    elseif r == 'v' then
+        logger.level = "debug"
+    end
+end
+--------------------------------------------------------------------------------
+--                           Preprocessing and parsing
+--------------------------------------------------------------------------------
+
+-- generate the config regex from the args : <arch>-<filesystem>-<interface>-<encryption>
+local regex_string = utils.generate_regex(args.arch, args.filesystem, args.interface, args.encryption)
+logger.info("Regex Generated from command line args: ", regex_string)
+
+local combinations = combination.generate_combinations(regex_string)
+logger.info("Combinations generated from regex: "..#combinations)
+
+-- parse the config file
+if args.config == "input.lua" then
+    logger.info("Using default config file: input.lua")
+else
+    logger.info("Using config file: "..args.config)
+end
+
+--------------------------------------------------------------------------------
+--                        Build and test the bootloader 
+--------------------------------------------------------------------------------
+
+-- if build and test both are false, then build and test both
+if not args.build and not args.test then
+    args.build = true
+    args.test = true
+end
+
+-- if build is true, then build the bootloader
+if args.build then
+    logger.info("Building the bootloader")
+    -- build the bootloader
+end
+
+-- if test is true, then test the bootloader
+if args.test then
+    logger.info("Testing the bootloader")
+    -- test the bootloader
+end
+
+-- print the remaining arguments if any
+if last_index < #arg then
+    logger.info("Remaining arguments: ")
+    for i = last_index, #arg do
+        print(i, arg[i])
     end
 end
 
--- generate the config regex from the args : <arch>-<filesystem>-<interface>-<encryption>
-logger.info("Regex Generated from command line args: ",utils.generate_regex(args.arch, args.filesystem, args.interface, args.encryption))
-
-for i = last_index, #arg do
-   print(i, arg[i])
-end
+os.exit(0)
+--------------------------------------------------------------------------------
+--                              End of file
+--------------------------------------------------------------------------------

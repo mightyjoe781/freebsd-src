@@ -44,4 +44,92 @@ function utils.load_data_file(file)
     return content
 end
 
+-- print a table in a pretty way
+function utils.print_table(t)
+    for k, v in pairs(t) do
+        print(k, v)
+    end
+end
+
+-- print a complex table in a pretty way
+function utils.print_complex_table(t)
+    for k, v in pairs(t) do
+        if type(v) == "table" then
+            print(k, "{")
+            utils.print_complex_table(v)
+            print("}")
+        else
+            print(k, v)
+        end
+    end
+end
+
+-- check if a table contains a value
+function utils.table_contains(table, value)
+    for _, v in ipairs(table) do
+        if v == value then
+            return true
+        end
+    end
+    return false
+end
+
+
+-- take intersection of two tables
+function utils.intersect_table(a, b)
+    local res = {}
+    for _, v in ipairs(a) do
+        if utils.table_contains(b, v) then
+            table.insert(res, v)
+        end
+    end
+    return res
+end
+
+-- take union of two tables
+function utils.union_table(a, b)
+    local res = {}
+    for _, v in ipairs(a) do
+        table.insert(res, v)
+    end
+    for _, v in ipairs(b) do
+        if not utils.table_contains(res, v) then
+            table.insert(res, v)
+        end
+    end
+    return res
+end
+
+-- subtract table b from table a, and return the result
+-- function utils.subtract_table(a, b)
+--     -- A U B - B = A - B
+--     return utils.subtract_table(utils.union_table(a, b), b)
+-- end
+
+-- subtract table b from table a Alternate implementation
+-- faster then the above implementation, and also probably more readable and correct
+function utils.subtract_table(a, b)
+    local res = {}
+    for _, v in ipairs(a) do
+        if not utils.table_contains(b, v) then
+            table.insert(res, v)
+        end
+    end
+    return res
+end
+
+-- this doesnt work
+-- local SRCTOP = os.execute("make -V SRCTOP")
+-- capture function for fixing make -V variable spawns new shell
+function utils.capture_execute(cmd, raw)
+    local f = assert(io.popen(cmd, 'r'))
+    local s = assert(f:read('*a'))
+    f:close()
+    if raw then return s end
+        s = string.gsub(s, '^%s+', '')
+        s = string.gsub(s, '%s+$', '')
+        s = string.gsub(s, '[\n\r]+', ' ')
+    return s
+end
+
 return utils

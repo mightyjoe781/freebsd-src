@@ -12,6 +12,8 @@ combination = {
     filesystem = {"zfs", "ufs"},
     interface = {"gpt", "mbr"},
     encryption = {"geli", "none"},
+    blacklist_regex = {"riscv64-*-mbr-*"},
+    linuxboot_edk2 = {"amd64-*-*-*"}
 }
 
 
@@ -102,7 +104,43 @@ function combination.generate_combinations_from_regex(regex)
         combinations = t
     end
     return combinations
+end
 
+-- remove blacklisted-list-regex combinations
+function combination.remove_blacklisted_combinations(combinations, blacklist)
+    -- remove blacklisted combinations
+    local new_combinations = {}
+    for _, v in ipairs(combinations) do
+        local flag = false
+        for _, v2 in ipairs(blacklist) do
+            if v:match(v2) then
+                flag = true
+                break
+            end
+        end
+        if not flag then
+            table.insert(new_combinations, v)
+        end
+    end
+    return new_combinations 
+end
+
+-- idea here is that generate_combination will generate all possible combinations - blacklisted combinations
+-- if user to blacklist more combinations, then we can just remove them from the list similar way
+function combination.generate_combinations(regex)
+    local combinations = combination.generate_combinations_from_regex(regex)
+    -- remove blacklisted combinations
+    local blacklist_combination = {}
+    for _, v in ipairs(combination.blacklist_regex) do
+        -- insert these combinations into blacklist_combination
+        local tmp = combination.generate_combinations_from_regex(v)
+        for _, v2 in ipairs(tmp) do
+            table.insert(blacklist_combination, v2)
+        end
+    end
+    -- remove blacklisted combinations utils.subtract_table
+    combinations = utils.subtract_table(combinations, blacklist_combination)
+    return combinations
 end
 
 return combination
