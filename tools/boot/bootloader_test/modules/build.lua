@@ -33,7 +33,6 @@ local build = { _version = "0.1.0" }
         linuxboot_edk2 = "false",
     }
 
-
     * build.generate(config)
     * build.generate_all_combinations()
 ]]--

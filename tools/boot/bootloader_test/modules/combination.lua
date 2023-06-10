@@ -13,7 +13,7 @@ combination = {
     interface = {"gpt", "mbr"},
     encryption = {"geli", "none"},
     blacklist_regex = {"riscv64-*-mbr-*"},
-    linuxboot_edk2 = {"amd64-*-*-*"}
+    linuxboot_edk2 = {"amd64-*-*-*","arm64-*-*-*"}
 }
 
 

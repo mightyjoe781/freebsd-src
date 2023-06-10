@@ -77,6 +77,16 @@
     * Calendars for biweekly meetings?
     * How to handle the build and test results? (simple matrix print or some other
       way)
+      Build x passed / failed
+      decide some consistent format
+      summary 30/50 passed
+      -- logs run store them
+    * data-sourcing 
+        makeimg : make it smart while building it makes sense according to architectures
+    -- think of more in terms of making more atomic libraries like make zfs, ufs and provide
+        options for making it work with various arch based on their requirements
+
+
 ]]--
 
 --------------------------------------------------------------------------------
@@ -139,6 +149,7 @@ OPTIONS
     -c ARG  configuration file to use for the build and test
     -b      build the bootloader only
     -t      test the bootloader only
+    -v      verbose output
 
 AUTHOR
     Sudhanshu Mohan Kashyap <
