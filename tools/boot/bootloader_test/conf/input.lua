@@ -17,7 +17,7 @@ return {
             a compact possible expression later on for blacklisting define as filesystem-partition-encryption
             a function should evaluate common combination expressions and calculate all possibilities 
         --]]
-        test_comb_regex = {"ufs-gpt-geli","*-gpt-geli","*-*-geli"},
+        regex_combination = {"ufs-gpt-geli","*-gpt-*","*-*-geli"},
         
         -- several overrides
         mtree_override = "",
@@ -26,5 +26,7 @@ return {
         qemu_args_overrides = "",
     },
     recipe_2 = {
+        arch  = "arm64",
+        regex_combination = {"ufs-gpt-geli","*-gpt-geli","*-*-geli"},
     }
 }

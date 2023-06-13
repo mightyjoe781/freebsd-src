@@ -3,6 +3,7 @@
 -- Use utils.lua as a library to import functions
 
 local utils = { _version = "0.1.0" }
+local posix = require('posix')
 
 -- generate regex from args
 function utils.generate_regex(arch, filesystem, interface, encryption)
@@ -52,14 +53,17 @@ function utils.print_table(t)
 end
 
 -- print a complex table in a pretty way
-function utils.print_complex_table(t)
-    for k, v in pairs(t) do
+function utils.tprint (tbl, indent)
+    if not indent then indent = 0 end
+    for k, v in pairs(tbl) do
+        local formatting = string.rep("  ", indent) .. k .. ": "
         if type(v) == "table" then
-            print(k, "{")
-            utils.print_complex_table(v)
-            print("}")
+            print(formatting)
+            utils.tprint(v, indent+1)
+        elseif type(v) == 'boolean' then
+            print(formatting .. tostring(v))		
         else
-            print(k, v)
+            print(formatting .. v)
         end
     end
 end
@@ -116,6 +120,27 @@ function utils.subtract_table(a, b)
         end
     end
     return res
+end
+
+-- check if a file already exists
+function utils.file_exists(file)
+    local f = io.open(file, "rb")
+    if f then f:close() end
+    return f ~= nil
+end
+
+-- check if file is a valid lua file
+function utils.is_valid_lua_file(file)
+    local f = io.open(file, "rb")
+    if not f then return false end
+    local content = f:read("*all")
+    f:close()
+    local status, err = load(content)
+    if status then
+        return true
+    else
+        return false
+    end
 end
 
 -- this doesnt work

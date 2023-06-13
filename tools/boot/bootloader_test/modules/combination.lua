@@ -2,18 +2,18 @@
 -- resource for the other files. It is not going to be executed directly, but
 -- rather imported as a source.
 
-local combination = { _version = "0.1.0" }
 -- package.path = package.path .. ";../modules/?.lua"
 local utils = require "modules.utils"
 
 -- list of universe of possible combinations
-combination = {
+local combination = {
     arch = {"amd64", "i386", "armv7", "arm64", "riscv64", "powerpc64", "powerpc64le"},
     filesystem = {"zfs", "ufs"},
     interface = {"gpt", "mbr"},
     encryption = {"geli", "none"},
     blacklist_regex = {"riscv64-*-mbr-*"},
-    linuxboot_edk2 = {"amd64-*-*-*","arm64-*-*-*"}
+    linuxboot_edk2 = {"amd64-*-*-*","arm64-*-*-*"},
+    _version = "0.1.0" 
 }
 
 
@@ -142,5 +142,44 @@ function combination.generate_combinations(regex)
     combinations = utils.subtract_table(combinations, blacklist_combination)
     return combinations
 end
+
+-- TODO: Use lua magic to compress below functions into one :P
+-- add validation from above list
+function combination.is_valid_arch(arch)
+    for _, v in ipairs(combination.arch) do
+        if v == arch then
+            return true
+        end
+    end
+    return false
+end
+
+function combination.is_valid_filesystem(filesystem)
+    for _, v in ipairs(combination.filesystem) do
+        if v == filesystem then
+            return true
+        end
+    end
+    return false
+end
+
+function combination.is_valid_interface(interface)
+    for _, v in ipairs(combination.interface) do
+        if v == interface then
+            return true
+        end
+    end
+    return false
+end
+
+function combination.is_valid_encryption(encryption)
+    for _, v in ipairs(combination.encryption) do
+        if v == encryption then
+            return true
+        end
+    end
+    return false
+end
+
 
 return combination

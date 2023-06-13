@@ -113,7 +113,8 @@ local args = {
     filesystem = "*",
     interface = "*",
     encryption = "*",
-    config = "input.lua",
+    configfile = "input.lua",
+    regex = nil,
     build = false,
     test = false,
     verbose = false
@@ -147,6 +148,7 @@ OPTIONS
     -i ARG  booting interface to use for the image
     -e ARG  encryption to use for the image
     -c ARG  configuration file to use for the build and test
+    -r ARG  regular expression to use for the build and test
     -b      build the bootloader only
     -t      test the bootloader only
     -v      verbose output
@@ -157,7 +159,7 @@ AUTHOR
 end
 
 local last_index = 1
-for r, optarg, optind in getopt(arg, 'a:f:i:e:c:btvh') do
+for r, optarg, optind in getopt(arg, 'a:f:i:e:c:r:btvh') do
     if r == '?' then
         return print('unrecognized option', arg[optind-1])
     end
@@ -169,7 +171,7 @@ for r, optarg, optind in getopt(arg, 'a:f:i:e:c:btvh') do
         -- exit with success
         os.exit(0)
     elseif r == 'a' then
-        args.arch = optarg
+        args.architecture = optarg
     elseif r == 'f' then
         args.filesystem = optarg
     elseif r == 'i' then
@@ -177,7 +179,9 @@ for r, optarg, optind in getopt(arg, 'a:f:i:e:c:btvh') do
     elseif r == 'e' then
         args.encryption = optarg
     elseif r == 'c' then
-        args.config = optarg
+        args.configfile = optarg
+    elseif r == 'r' then
+        args.regex = optarg
     elseif r == 'b' then
         args.build = true
     elseif r == 't' then
@@ -190,18 +194,50 @@ end
 --                           Preprocessing and parsing
 --------------------------------------------------------------------------------
 
+
+-- lets define the behaviour
+-- if command line args are passed then use them to filter the config file(in 
+-- case not provided it becomes default) runs
+-- so basically its a filter that allows you narrow runs based on if you don't
+-- wanna run everything
+
+-- default behaviour generate : *-*-*-*
+-- or else whatever filter you provide 
+logger.debug("Command line args provided")
+logger.debug("Architecture: ", args.architecture)
+logger.debug("Filesystem: ", args.filesystem)
+logger.debug("Interface: ", args.interface)
+logger.debug("Encryption: ", args.encryption)
+
 -- generate the config regex from the args : <arch>-<filesystem>-<interface>-<encryption>
-local regex_string = utils.generate_regex(args.arch, args.filesystem, args.interface, args.encryption)
-logger.info("Regex Generated from command line args: ", regex_string)
+local regex_string = utils.generate_regex(args.architecture, args.filesystem, args.interface, args.encryption)
+logger.debug("Regex Generated from command line args: ", regex_string)
+-- generate the combinations from the regex
+-- local combinations = combination.generate_combinations(regex_string)
+-- logger.debug("Combinations generated from regex: "..#combinations)
 
-local combinations = combination.generate_combinations(regex_string)
-logger.info("Combinations generated from regex: "..#combinations)
-
--- parse the config file
-if args.config == "input.lua" then
-    logger.info("Using default config file: input.lua")
+if args.regex then
+    logger.debug("Regex provided from command line args: ", args.regex)
+    regex_string = args.regex
+end
+-- check if config file is provided
+if args.configfile == "input.lua" then
+    logger.debug("Using default config file: input.lua")
 else
-    logger.info("Using config file: "..args.config)
+    logger.debug("Using config file: ", args.configfile)
+end
+
+-- prepend the default config file path to the config file name
+if args.configfile == "input.lua" then
+    args.configfile = "config/"..args.configfile
+end
+
+logger.info("Parsing config file: "..args.configfile)
+local configs, err = parser.get_all_configurations(args.configfile, regex_string)
+if not configs then
+    logger.error("Error while parsing config file: "..args.configfile)
+    logger.error(err)
+    os.exit(1)
 end
 
 --------------------------------------------------------------------------------
@@ -218,12 +254,30 @@ end
 if args.build then
     logger.info("Building the bootloader")
     -- build the bootloader
+    -- for each config object in configs
+    for _, config in ipairs(configs) do
+        -- build the bootloader
+        local status, err = build.build_bootloader(config)
+        if not status then
+            logger.error("Error while building bootloader")
+            logger.error(err)
+        end
+    end
 end
 
 -- if test is true, then test the bootloader
 if args.test then
     logger.info("Testing the bootloader")
     -- test the bootloader
+    -- for each config object in configs
+    for _, config in ipairs(configs) do
+        -- test the bootloader
+        local status, err = test.test_bootloader(config)
+        if not status then
+            logger.error("Error while testing bootloader")
+            logger.error(err)
+        end
+    end
 end
 
 -- print the remaining arguments if any
