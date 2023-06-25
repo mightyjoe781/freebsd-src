@@ -157,5 +157,38 @@ function utils.capture_execute(cmd, raw)
     return s
 end
 
+-- utility function to write a file and handle all lua io.open() weirdness
+function utils.write_data_to_file(file, data)
+    local f = io.open(file, "w")
+    -- check if file is even open
+    if f == nil then
+        return "Failed to open file "..file
+    else
+      f:write(data)
+      f:close()
+    end
+end
+
+-- Try to avoid executing shell commands in lua, but this is the only way to get the some work done :(
+
+-- utils die function
+function utils.die(msg)
+    print(msg)
+    os.exit(1)
+end
+
+-- utils.execute()
+function utils.execute(cmd)
+    -- print("Executing: "..cmd)
+    local _,msg,ret = os.execute(cmd)
+    if ret ~= 0 then
+        print(msg)
+        utils.die("Failed to execute "..cmd)
+    end
+end
+
+function utils.fetch_file(url, file)
+    utils.execute("fetch -o "..file.." "..url)
+end
 
 return utils
