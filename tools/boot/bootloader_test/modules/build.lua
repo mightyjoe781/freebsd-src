@@ -17,12 +17,12 @@ local HOME = os.getenv("HOME")
 local QEMU_BIN = "/usr/local/bin/qemu-system-x86_64"
 
 local STAND_ROOT = HOME.."/stand-test-root"
-local BIOS_DIR = STAND_ROOT.."/bios"
-local CACHE_DIR = STAND_ROOT.."/cache"
-local IMAGE_DIR = STAND_ROOT.."/images"
-local OVERRIDES = STAND_ROOT.."/overrides"
-local SCRIPT_DIR = STAND_ROOT.."/scripts"
-local TREE_DIR = STAND_ROOT.."/trees"
+-- local BIOS_DIR = STAND_ROOT.."/bios"
+-- local CACHE_DIR = STAND_ROOT.."/cache"
+-- local IMAGE_DIR = STAND_ROOT.."/images"
+-- local OVERRIDES = STAND_ROOT.."/overrides"
+-- local SCRIPT_DIR = STAND_ROOT.."/scripts"
+-- local TREE_DIR = STAND_ROOT.."/trees"
 
 local build = {
     -- use ../sources/ as the default directory for building freebsd trees
@@ -170,8 +170,106 @@ end
 --------------------------------------------------------------------------------
 --                                make_freebsd_minimal_trees
 --------------------------------------------------------------------------------
+local function check_override(machine_combo)
+    -- check files exist in overrides
+    -- first check if directory exists
+    if not utils.dir_exists(build.OVERRIDES.."/"..machine_combo) then
+        return false, "Directory "..build.OVERRIDES.."/"..machine_combo.." does not exist"
+    end
+    local o = build.OVERRIDES.."/"..machine_combo
+    local files = {"boot/device.hints", "boot/kernel/kernel", "boot/kernel/acl_nfs4.ko", "boot/kernel/cryptodev.ko", "boot/kernel/zfs.ko", "boot/kernel/geom_eli.ko"}
+    -- check all files exists in directory
+    for _, file in ipairs(files) do
+        if not utils.file_exists(o.."/"..file) then
+            return false, "File "..o.."/"..file.." does not exist"
+        end
+    end
+    return true, ""
+end
 
-local function make_freebsd_minimal_trees()
+local function get_rc_conf(machine, machine_arch)
+    -- simple etc/rc
+    local rc = [[
+#!/bin/sh
+sysctl machdep.bootmethod
+echo "RC COMMAND RUNNING -- SUCCESS!!!"
+halt -p
+]]
+    return rc
+end
+
+local function get_loader_conf(machine, machine_arch)
+    -- simple boot/loader.conf
+    local loader = [[
+comconsole_speed=115200
+autoboot_delay=2
+zfs_load="YES"
+boot_verbose=yes
+kern.cfg.order="acpi,fdt"
+]]
+    return loader
+end
+
+local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, rc_conf, loader_conf)
+    -- local img_filename = img_filename         -- e.g. FREEBSD-13.0-RELEASE-amd64-bootonly.iso
+    local machine_combo = get_machine_combo(machine, machine_arch)  -- e.g. amd64-amd64
+    local tree = build.TREE_DIR.."/"..machine_combo.."/freebsd"   -- e.g. /trees/arm64-aarch64/freebsd
+
+    -- clean up tree & make tree
+    utils.execute("rm -rf "..tree)
+    utils.execute("mkdir -p "..tree)
+
+    -- make required dirs
+    local dirs = {"boot/kernel", "boot/defaults", "boot/lua", "boot/loader.conf.d",
+        "sbin", "bin", "lib", "libexec", "etc", "dev"}
+    for _, dir in ipairs(dirs) do
+        utils.execute("mkdir -p "..tree..dir)
+    end
+
+    -- don't have separate /usr
+    utils.execute("ln -s . "..tree.."/usr")
+
+    -- snag binaries for simple /etc/rc/file
+    utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." sbin/reboot sbin/halt sbin/init sbin/sysctl lib/libncursesw.so.9 lib/libc.so.7 lib/libedit.so.8 libexec/ld-elf.so.1")
+  
+    -- simple etc/rc
+    -- save rc in a file, but due to weird lua io.open() behaviour, we need create a file first
+    -- make it executable
+    local rc = rc_conf or get_rc_conf(machine, machine_arch)
+    utils.write_data_to_file(tree.."/etc/rc", rc)
+    utils.execute("chmod +x "..tree.."/etc/rc")
+
+    -- check to see if we have overrides here ... insert our own kernel
+    print("Checking for overrides for "..machine_combo)
+    local found, err_msg = check_override(machine_combo)
+    if found then
+        print("Found overrides for "..machine_combo)
+        -- copy overrides
+        local o = build.OVERRIDES.."/"..machine_combo
+        local files = {"boot/device.hints", "boot/kernel/kernel", "boot/kernel/acl_nfs4.ko",
+         "boot/kernel/cryptodev.ko", "boot/kernel/zfs.ko", "boot/kernel/geom_eli.ko"}
+        for _, file in ipairs(files) do
+            local f = io.open(o.."/"..file, "r")
+            if f ~= nil then
+                io.close(f)
+                print("Copying override "..file)
+                utils.execute("cp "..o.."/"..file.." "..tree.."/"..file)
+            end
+        end
+    else
+        print("No overrides found for "..machine_combo)
+        print("Using default kernel")
+        -- copy kernel from image
+        utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." boot/kernel/kernel boot/kernel/acl_nfs4.ko boot/kernel/cryptodev.ko boot/kernel/zfs.ko boot/kernel/geom_eli.ko boot/device.hints")
+    end
+
+    -- setup some common settings for serial console
+    -- append some config to boot.config
+    utils.execute("echo '-h -D -S115200' >> "..tree.."/boot/loader.conf")
+
+    -- loader config
+    local loader = loader_conf or get_loader_conf(machine, machine_arch)
+    utils.write_data_to_file(tree.."/boot/loader.conf", loader)
 
 end
 
@@ -309,7 +407,12 @@ function build.build_freebsd_bootloader_tree(config)
     -- update_freebsd_img_cache(machine, machine_arch, flavour, FREEBSD_VERSION)
     update_freebsd_img(img_filename, img_url)
 
-    make_freebsd_minimal_trees()
+    -- craft a minimal tree, either supply correct rc or loader conf or get them
+    local rc_conf = config.rc_conf or get_rc_conf(machine, machine_arch)
+    local loader_conf = config.loader_conf or get_loader_conf(machine, machine_arch)
+    make_freebsd_minimal_trees(machine, machine_arch, img_filename, rc_conf, loader_conf)
+
+    -- make a test tree for testing
     make_freebsd_test_trees()
     make_freebsd_esps()
     make_freebsd_images()

@@ -129,6 +129,17 @@ function utils.file_exists(file)
     return f ~= nil
 end
 
+-- check if a directory already exists
+function utils.dir_exists(dir)
+    local ok, err, code = os.rename(dir, dir)
+    if not ok then
+        if code == 13 then
+            -- Permission denied, but it exists
+            return true
+        end
+    end
+    return ok, err
+end
 -- check if file is a valid lua file
 function utils.is_valid_lua_file(file)
     local f = io.open(file, "rb")
