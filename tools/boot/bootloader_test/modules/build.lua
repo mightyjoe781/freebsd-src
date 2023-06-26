@@ -276,19 +276,84 @@ end
 --------------------------------------------------------------------------------
 --                                make_freebsd_test_trees
 --------------------------------------------------------------------------------
-local function make_freebsd_test_trees()
+local function make_freebsd_test_trees(machine, machine_arch)
+    local machine_combo = get_machine_combo(machine, machine_arch)
+    local tree = build.TREE_DIR.."/"..machine_combo.."/test-stand"
+
+    utils.execute("mkdir -p "..tree)
+
+    utils.execute("mtree -deUW -f "..build.SRCTOP.."/etc/mtree/BSD.root.dist -p "..tree)
+    print("Creating tree for "..machine_combo)
+    -- execute("cd "..SRCTOP.."/stand")
+    -- TODO: understand bash code for SHELL
+
+    utils.execute('cd '..build.SRCTOP..'/stand && SHELL="make -j 100 all" make buildenv TARGET='..machine..' TARGET_ARCH='..machine_arch)
+    utils.execute('cd '..build.SRCTOP..'/stand && SHELL="make install DESTDIR='..tree..' MK_MAN=no MK_INSTALL_AS_USER=yes WITHOUT_DEBUG_FILES=yes" make buildenv TARGET='..machine..' TARGET_ARCH='..machine_arch)
+
+    utils.execute("rm -rf "..tree.."/bin")
+    utils.execute("rm -rf "..tree.."/[ac-z]*")
+end
+
+--------------------------------------------------------------------------------
+--                                make_freebsd_esps
+--------------------------------------------------------------------------------
+local function make_freebsd_esps(machine, machine_arch)
+    local machine_combo = get_machine_combo(machine, machine_arch)
+    local tree = build.TREE_DIR.."/"..machine_combo.."/test-stand"
+    local esp = build.TREE_DIR.."/"..machine_combo.."/freebsd-esp"
+
+    -- make directory and clean up first
+    utils.execute("rm -rf "..esp)
+    utils.execute("mkdir -p "..esp)
+
+    -- make directory TREE_DIR/efi/boot
+    utils.execute("mkdir -p "..esp.."/efi/boot")
+    if machine_arch == "amd64" then
+        utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootx64.efi")
+    elseif machine_arch == "i386" then
+        utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootia32.efi")
+    elseif machine_arch == "arm64" then
+        utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootaa64.efi")
+    elseif machine_arch == "arm" then
+        utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootarm.efi")
+    end
+end
+--------------------------------------------------------------------------------
+--                                make_freebsd_images
+--------------------------------------------------------------------------------
+local function make_freebsd_images(machine, machine_arch)
+    local machine_combo = get_machine_combo(machine, machine_arch)
+
+    local src = build.TREE_DIR.."/"..machine_combo.."/freebsd-esp"
+    local dir = build.TREE_DIR.."/"..machine_combo.."/freebsd"
+    local dir2 = build.TREE_DIR.."/"..machine_combo.."/test-stand"
+    local esp = build.IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".esp"
+    local ufs = build.IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".ufs"
+    local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
+
+    -- make directories
+    utils.execute("mkdir -p "..build.IMAGE_DIR.."/"..machine_combo)
+    utils.execute("mkdir -p "..dir2.."/etc")
+
+    -- set fstab file
+    local fstab = [[
+/dev/ufs/freebsd / ufs rw 1 1
+]]
+    -- save this fstab file
+    utils.write_data_to_file(dir2.."/etc/fstab", fstab)
+
+    -- makefs command
+    utils.execute("makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 -o volume_label=EFISYS -s100m "..esp.." "..src)
+    -- makefs command for ufs
+    utils.execute("makefs -t ffs -B little -s 200m -o label=root "..ufs.." "..dir.." "..dir2)
+    -- makeimg image
+    utils.execute("mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..ufs.." -o "..img)
 
 end
 
-local function make_freebsd_esps()
-
-end
-
-local function make_freebsd_images()
-
-end
-
-
+--------------------------------------------------------------------------------
+--                                make_freebsd_scripts
+--------------------------------------------------------------------------------
 local function make_freebsd_scripts(machine, machine_arch)
     local machine_combo = get_machine_combo(machine, machine_arch)
     local bios_code = build.BIOS_DIR.."/edk2-"..machine_combo.."-code.fd"
@@ -413,13 +478,15 @@ function build.build_freebsd_bootloader_tree(config)
     make_freebsd_minimal_trees(machine, machine_arch, img_filename, rc_conf, loader_conf)
 
     -- make a test tree for testing
-    make_freebsd_test_trees()
-    make_freebsd_esps()
-    make_freebsd_images()
-    make_freebsd_scripts()
+    make_freebsd_test_trees(machine, machine_arch)
+    make_freebsd_esps(machine, machine_arch)
+    make_freebsd_images(machine, machine_arch)
+    make_freebsd_scripts(machine, machine_arch)
 end
 
 function build.build_linuxboot_bootloader_tree(config)
+    print("Building linuxboot bootloader tree")
+
 
 end
 
