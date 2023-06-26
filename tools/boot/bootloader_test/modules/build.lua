@@ -355,6 +355,7 @@ end
 --                                make_freebsd_scripts
 --------------------------------------------------------------------------------
 local function make_freebsd_scripts(machine, machine_arch)
+
     local machine_combo = get_machine_combo(machine, machine_arch)
     local bios_code = build.BIOS_DIR.."/edk2-"..machine_combo.."-code.fd"
     local bios_vars = build.BIOS_DIR.."/edk2-"..machine_combo.."-vars.fd"
@@ -378,11 +379,11 @@ local function make_freebsd_scripts(machine, machine_arch)
       end
     end
     -- make a script to run qemu
-    local img = IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
-    local script = SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
+    local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
+    local script = build.SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
 
     -- make directory
-    utils.execute("mkdir -p "..SCRIPT_DIR.."/"..machine_combo)
+    utils.execute("mkdir -p "..build.SCRIPT_DIR.."/"..machine_combo)
 
     -- set script file
     if machine_arch == "amd64" then
@@ -395,9 +396,9 @@ local function make_freebsd_scripts(machine, machine_arch)
       QEMU_BIN, img, bios_code, bios_vars)
 
       -- save this script
-      utils.write_file(script, script_file)
+      utils.write_data_to_file(script, script_file)
     elseif machine_arch == "aarch64" then
-      local raw = IMAGE_DIR.."/"..machine_combo.."/nvme-test-empty.raw"
+      local raw = build.IMAGE_DIR.."/"..machine_combo.."/nvme-test-empty.raw"
 
       local script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
       -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
@@ -411,7 +412,7 @@ local function make_freebsd_scripts(machine, machine_arch)
       QEMU_BIN, img, bios_code, bios_vars, raw)
 
       -- save this script
-      utils.write_file(script, script_file)
+      utils.write_data_to_file(script, script_file)
     end
 end
 
