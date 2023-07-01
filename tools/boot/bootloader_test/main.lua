@@ -258,9 +258,24 @@ if args.build then
     for _, config in ipairs(configs) do
         -- build the bootloader
         local status, err = build.build_bootloader(config)
+        -- store the status of the build in the config object
+        config.build_status = status
+        config.build_error = err
         if not status then
             logger.error("Error while building bootloader")
             logger.error(err)
+        else
+            logger.info("Bootloader built successfully for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)
+        end
+        -- lets pretty print the config object for debugging
+    end
+    -- pretty print the configs build status
+    logger.debug("Configs build status: ")
+    for _, config in ipairs(configs) do
+        if config.status ~= 0 then
+            logger.debug("Build successful for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)
+        else
+            logger.debug("Build failed for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)
         end
     end
 end
@@ -276,6 +291,8 @@ if args.test then
         if not status then
             logger.error("Error while testing bootloader")
             logger.error(err)
+        else
+            logger.info("Bootloader tested successfully for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)
         end
     end
 end

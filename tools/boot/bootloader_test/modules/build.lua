@@ -364,8 +364,7 @@ local function make_freebsd_scripts(machine, machine_arch)
       -- if bios code other than /usr/local/share/qemu/edk2-x86_64-code.fd
       -- then copy over to bios_code
       if bios_code ~= "/usr/local/share/qemu/edk2-x86_64-code.fd" then
-        utils.execute("cp /usr/local/share/qemu/edk2-x86_64-code.fd "..bios_code)
-        -- copy over vars file too
+        utils.execute("cp /usr/local/share/qemu/edk2-x86_64-code.fd "..bios_code) -- copy over vars file too
         utils.execute("cp /usr/local/share/qemu/edk2-i386-vars.fd "..bios_vars)
       end
     elseif machine_arch == "aarch64" then
@@ -483,12 +482,12 @@ function build.build_freebsd_bootloader_tree(config)
     make_freebsd_esps(machine, machine_arch)
     make_freebsd_images(machine, machine_arch)
     make_freebsd_scripts(machine, machine_arch)
+    -- if all goes well, return 0, nil
+    return 0, nil
 end
 
 function build.build_linuxboot_bootloader_tree(config)
     print("Building linuxboot bootloader tree")
-
-
 end
 
 function build.build_bootloader(config)
