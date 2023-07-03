@@ -202,4 +202,8 @@ function utils.fetch_file(url, file)
     utils.execute("fetch -o "..file.." "..url)
 end
 
+-- get the current working directory
+function utils.get_cwd()
+    return utils.capture_execute("pwd")
+end
 return utils
