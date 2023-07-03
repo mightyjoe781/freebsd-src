@@ -229,7 +229,7 @@ end
 
 -- prepend the default config file path to the config file name
 if args.configfile == "input.lua" then
-    args.configfile = "config/"..args.configfile
+    args.configfile = "conf/"..args.configfile
     -- find the absolute path of the config file
     -- get the current working directory
     local cwd = utils.get_cwd()
