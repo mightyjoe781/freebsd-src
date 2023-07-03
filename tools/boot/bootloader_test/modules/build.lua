@@ -121,7 +121,7 @@ end
 
 -- function that finds flavor from arch name and returns it
 local function find_flavour(arch)
-    local machine, _ = string.match(ARCH[arch], "(%w+):(%w+)")
+    local machine, _ = string.match(arch, "(%w+):(%w+)")
     local flavour
     -- for arm64, we have GENERICSD images only
     if machine == "arm64" then
@@ -150,10 +150,11 @@ local function update_freebsd_img(file, img_url)
     -- if file exists in cache, return
     local filepath = build.CACHE_DIR.."/"..file..".xz"
     if utils.file_exists(filepath) then
+        print("File "..filepath.." already exists in cache, skipping download")
         return
     end
     -- else we download the image
-    utils.fetch(img_url, filepath)
+    utils.fetch_file(img_url, filepath)
     -- extract that image
     utils.execute("xz -d "..filepath)
 end
@@ -490,8 +491,28 @@ function build.build_linuxboot_bootloader_tree(config)
     print("Building linuxboot bootloader tree")
 end
 
+local function setup_build_env()
+    -- create all build directories
+    -- for each directory in build.*_DIR
+
+    local dirs = {
+        build.BUILD_DIR,
+        build.CACHE_DIR,
+        build.IMAGE_DIR,
+        build.BIOS_DIR,
+        build.SCRIPT_DIR,
+        build.TREE_DIR,
+        build.OVERRIDES
+    }
+    for _, dir in ipairs(dirs) do
+        utils.execute("mkdir -p "..dir)
+    end
+
+end
+
 function build.build_bootloader(config)
     -- build the bootloader tree
+    setup_build_env()
     config.linuxboot_edk2 = config.linuxboot_edk2 or "false"
     if config.linuxboot_edk2 == "true" then
         return build.build_linuxboot_bootloader_tree(config)
