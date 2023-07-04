@@ -8,6 +8,7 @@ local posix = require('posix')
 local parser = require('modules.parser')
 local zfs = require('modules.zfs')
 local ufs = require('modules.ufs')
+local logger = require('modules.logger')
 
 
 --------------------------------------------------------------------------------
@@ -505,6 +506,7 @@ local function setup_build_env()
         build.OVERRIDES
     }
     for _, dir in ipairs(dirs) do
+        logger.debug("Creating directory "..dir)
         utils.execute("mkdir -p "..dir)
     end
 
