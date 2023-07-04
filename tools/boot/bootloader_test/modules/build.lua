@@ -18,6 +18,7 @@ local HOME = os.getenv("HOME")
 local QEMU_BIN = "/usr/local/bin/qemu-system-x86_64"
 
 local STAND_ROOT = HOME.."/stand-test-root"
+local SRCTOP = utils.capture_execute("make -V SRCTOP", false)
 -- local BIOS_DIR = STAND_ROOT.."/bios"
 -- local CACHE_DIR = STAND_ROOT.."/cache"
 -- local IMAGE_DIR = STAND_ROOT.."/images"
@@ -219,7 +220,7 @@ local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, r
     -- local img_filename = img_filename         -- e.g. FREEBSD-13.0-RELEASE-amd64-bootonly.iso
     local machine_combo = get_machine_combo(machine, machine_arch)  -- e.g. amd64-amd64
     local tree = build.TREE_DIR.."/"..machine_combo.."/freebsd/"   -- e.g. /trees/arm64-aarch64/freebsd
-    logger.log("Making freebsd minimal trees for "..machine_combo.." in "..tree)
+    logger.debug("Making freebsd minimal trees for "..machine_combo.." in "..tree)
 
     -- clean up tree & make tree
     utils.execute("rm -rf "..tree)
@@ -236,7 +237,7 @@ local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, r
     utils.execute("ln -s . "..tree.."/usr")
 
     -- snag binaries for simple /etc/rc/file
-    logger.log("Extracting binaries from "..build.CACHE_DIR.."/"..img_filename)
+    logger.debug("Extracting binaries from "..build.CACHE_DIR.."/"..img_filename)
     utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." sbin/reboot sbin/halt sbin/init sbin/sysctl lib/libncursesw.so.9 lib/libc.so.7 lib/libedit.so.8 libexec/ld-elf.so.1")
   
     -- simple etc/rc
@@ -291,14 +292,17 @@ local function make_freebsd_test_trees(machine, machine_arch)
 
     utils.execute("mkdir -p "..tree)
 
-    utils.execute("mtree -deUW -f "..build.SRCTOP.."/etc/mtree/BSD.root.dist -p "..tree)
+    logger.debug("Creating tree for "..machine_combo)
+    utils.execute("mtree -deUW -f "..SRCTOP.."/etc/mtree/BSD.root.dist -p "..tree)
     print("Creating tree for "..machine_combo)
     -- execute("cd "..SRCTOP.."/stand")
     -- TODO: understand bash code for SHELL
 
-    utils.execute('cd '..build.SRCTOP..'/stand && SHELL="make -j 100 all" make buildenv TARGET='..machine..' TARGET_ARCH='..machine_arch)
-    utils.execute('cd '..build.SRCTOP..'/stand && SHELL="make install DESTDIR='..tree..' MK_MAN=no MK_INSTALL_AS_USER=yes WITHOUT_DEBUG_FILES=yes" make buildenv TARGET='..machine..' TARGET_ARCH='..machine_arch)
+    logger.debug("Building test-stand for "..machine_combo)
+    utils.execute('cd '..SRCTOP..'/stand && SHELL="make -j 100 all" make buildenv TARGET='..machine..' TARGET_ARCH='..machine_arch)
+    utils.execute('cd '..SRCTOP..'/stand && SHELL="make install DESTDIR='..tree..' MK_MAN=no MK_INSTALL_AS_USER=yes WITHOUT_DEBUG_FILES=yes" make buildenv TARGET='..machine..' TARGET_ARCH='..machine_arch)
 
+    logger.debug("Removing unnecessary files from "..tree)
     utils.execute("rm -rf "..tree.."/bin")
     utils.execute("rm -rf "..tree.."/[ac-z]*")
 end
@@ -315,6 +319,7 @@ local function make_freebsd_esps(machine, machine_arch)
     utils.execute("rm -rf "..esp)
     utils.execute("mkdir -p "..esp)
 
+    logger.debug("Copying files from "..tree.." to "..esp)
     -- make directory TREE_DIR/efi/boot
     utils.execute("mkdir -p "..esp.."/efi/boot")
     if machine_arch == "amd64" then
@@ -351,6 +356,7 @@ local function make_freebsd_images(machine, machine_arch)
     -- save this fstab file
     utils.write_data_to_file(dir2.."/etc/fstab", fstab)
 
+    logger.debug("Creating image for "..machine_combo)
     -- makefs command
     utils.execute("makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 -o volume_label=EFISYS -s100m "..esp.." "..src)
     -- makefs command for ufs
@@ -411,7 +417,6 @@ local function make_freebsd_scripts(machine, machine_arch)
       local script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
       -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
       -device virtio-blk,drive=drive0,bootindex=0 \
-      -drive file=%s,format=raw,if=pflash \
       -drive file=%s,format=raw,if=pflash \
       -drive file=%s,if=none,id=drive1,cache=writeback,format=raw \
       -device nvme,serial=deadbeef,drive=drive1 \
