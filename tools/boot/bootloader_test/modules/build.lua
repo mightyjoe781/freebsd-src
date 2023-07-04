@@ -442,6 +442,8 @@ function build.build_freebsd_bootloader_tree(config)
 
     -- rest all we will figure out from the config
     -- extract required items from config
+    logger.debug("config : "..utils.dump(config))
+    
     logger.debug("Running validation on config")
     local code, msg = validate_config(config)
     -- if code == 1 then return code, msg
