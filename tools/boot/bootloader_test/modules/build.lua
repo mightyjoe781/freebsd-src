@@ -150,10 +150,12 @@ end
 local function update_freebsd_img(file, img_url)
     -- if file exists in cache, return
     local filepath = build.CACHE_DIR.."/"..file..".xz"
+    logger.debug("Checking if file "..filepath.." exists in cache")
     if utils.file_exists(filepath) then
-        print("File "..filepath.." already exists in cache, skipping download")
+        logger.info("File "..filepath.." already exists in cache, skipping download")
         return
     end
+    logger.info("File "..filepath.." does not exist in cache, downloading")
     -- else we download the image
     utils.fetch_file(img_url, filepath)
     -- extract that image
@@ -440,11 +442,13 @@ function build.build_freebsd_bootloader_tree(config)
 
     -- rest all we will figure out from the config
     -- extract required items from config
+    logger.debug("Running validation on config")
     local code, msg = validate_config(config)
     -- if code == 1 then return code, msg
     if code ~= 0 then
         return code, msg
     end
+    logger.debug("Validation successful")
 
     
     -- fix if config passes ':' in the architecture
@@ -470,6 +474,21 @@ function build.build_freebsd_bootloader_tree(config)
     local FREEBSD_VERSION = config.freebsd_version or build.FREEBSD_VERSION
     local img_filename = config.img_filename or get_img_filename(machine_combo, flavour, FREEBSD_VERSION)
     local img_url = config.img_url or get_img_url(machine, machine_arch, img_filename, FREEBSD_VERSION)
+
+
+    -- log all the configs important for this build
+    logger.debug("Machine: "..machine)
+    logger.debug("Machine Arch: "..machine_arch)
+    logger.debug("Machine Combo: "..machine_combo)
+    logger.debug("Arch: "..arch)
+    logger.debug("Flavour: "..flavour)
+    logger.debug("Filesystem: "..filesystem)
+    logger.debug("Interface: "..interface)
+    logger.debug("Encryption: "..encryption)
+    logger.debug("Linuxboot EDK2: "..tostring(linuxboot_edk2))
+    logger.debug("FreeBSD Version: "..FREEBSD_VERSION)
+    logger.debug("Image Filename: "..img_filename)
+    logger.debug("Image URL: "..img_url)
 
     -- update_freebsd_img_cache(machine, machine_arch, flavour, FREEBSD_VERSION)
     update_freebsd_img(img_filename, img_url)
