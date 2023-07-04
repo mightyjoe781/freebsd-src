@@ -496,8 +496,8 @@ local function setup_build_env()
     -- create all build directories
     -- for each directory in build.*_DIR
 
+    logger.debug("Creating build directories")
     local dirs = {
-        build.BUILD_DIR,
         build.CACHE_DIR,
         build.IMAGE_DIR,
         build.BIOS_DIR,
