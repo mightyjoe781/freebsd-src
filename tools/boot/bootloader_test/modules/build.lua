@@ -442,7 +442,8 @@ function build.build_freebsd_bootloader_tree(config)
 
     -- rest all we will figure out from the config
     -- extract required items from config
-    logger.debug("config : "..utils.dump(config))
+    logger.debug("Debug config")
+    logger.debug(utils.print_table(config))
     
     logger.debug("Running validation on config")
     local code, msg = validate_config(config)
@@ -486,7 +487,11 @@ function build.build_freebsd_bootloader_tree(config)
     logger.debug("Flavour: "..flavour)
     logger.debug("Filesystem: "..filesystem)
     logger.debug("Interface: "..interface)
-    logger.debug("Encryption: "..encryption)
+    if encryption ~= nil then 
+        logger.debug("Encryption: "..encryption) 
+    else  
+        logger.debug("Encryption: None")
+    end
     logger.debug("Linuxboot EDK2: "..tostring(linuxboot_edk2))
     logger.debug("FreeBSD Version: "..FREEBSD_VERSION)
     logger.debug("Image Filename: "..img_filename)

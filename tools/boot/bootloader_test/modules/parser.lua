@@ -10,6 +10,7 @@ local parser = {
 }
 local combination = require('modules.combination')
 local utils = require('modules.utils')
+local logger = require('modules.logger')
 
 -- a config blueprint for building the bootloader
 
@@ -130,7 +131,7 @@ function parser.get_all_configurations(file, filter_combination)
         -- generate configs for each valid_regex_combinations such that all the recipes are copied
         -- and the regex_combination is replaced with the valid_regex_combination
         for _,regex_combination in pairs(valid_regex_combinations) do
-            local filesystem, interface, encryption = regex_combination:match("([^%-]+)%-([^%-]+)%-([^%-]+)")
+            local _, filesystem, interface, encryption = regex_combination:match("([^%-]+)%-([^%-]+)%-([^%-]+)%-([^%-]+)")
             local config = {
                 architecture = architecture,
                 filesystem = filesystem,
