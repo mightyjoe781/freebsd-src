@@ -341,9 +341,9 @@ local function make_freebsd_images(machine, machine_arch)
     local src = build.TREE_DIR.."/"..machine_combo.."/freebsd-esp"
     local dir = build.TREE_DIR.."/"..machine_combo.."/freebsd"
     local dir2 = build.TREE_DIR.."/"..machine_combo.."/test-stand"
-    local esp = build.IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".esp"
-    local ufs = build.IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".ufs"
-    local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
+    local esp = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".esp"
+    local ufs = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".ufs"
+    local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".img"
 
     -- make directories
     utils.execute("mkdir -p "..build.IMAGE_DIR.."/"..machine_combo)
@@ -393,7 +393,7 @@ local function make_freebsd_scripts(machine, machine_arch)
       end
     end
     -- make a script to run qemu
-    local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd"..machine_combo..".img"
+    local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".img"
     local script = build.SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
 
     -- make directory
