@@ -238,12 +238,12 @@ local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, r
 
     -- snag binaries for simple /etc/rc/file
     logger.debug("Extracting binaries from "..build.CACHE_DIR.."/"..img_filename)
-    utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." sbin/reboot sbin/halt sbin/init sbin/sysctl lib/libncursesw.so.9 lib/libc.so.7 lib/libedit.so.8 libexec/ld-elf.so.1")
+    utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." sbin/reboot sbin/halt sbin/init bin/sh sbin/sysctl lib/libncursesw.so.9 lib/libc.so.7 lib/libedit.so.8 libexec/ld-elf.so.1")
   
     -- simple etc/rc
     -- save rc in a file, but due to weird lua io.open() behaviour, we need create a file first
     -- make it executable
-    logger.debug("Writing rc.conf to "..tree.."/etc/rc.conf")
+    logger.debug("Writing rc.conf to "..tree.."/etc/rc")
     local rc = rc_conf or get_rc_conf(machine, machine_arch)
     utils.write_data_to_file(tree.."/etc/rc", rc)
     utils.execute("chmod +x "..tree.."/etc/rc")
@@ -351,7 +351,7 @@ local function make_freebsd_images(machine, machine_arch)
 
     -- set fstab file
     local fstab = [[
-/dev/ufs/freebsd / ufs rw 1 1
+/dev/ufs/root / ufs rw 1 1
 ]]
     -- save this fstab file
     utils.write_data_to_file(dir2.."/etc/fstab", fstab)
@@ -417,6 +417,7 @@ local function make_freebsd_scripts(machine, machine_arch)
       local script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
       -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
       -device virtio-blk,drive=drive0,bootindex=0 \
+      -drive file=%s,format=raw,if=pflash \
       -drive file=%s,format=raw,if=pflash \
       -drive file=%s,if=none,id=drive1,cache=writeback,format=raw \
       -device nvme,serial=deadbeef,drive=drive1 \
