@@ -284,6 +284,21 @@ if args.build then
             logger.debug("Build failed for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)
         end
     end
+    -- print a summary of the build
+    logger.info("--------------------------------------------------")
+    logger.info("Build summary: ")
+    local build_success = 0
+    local build_fail = 0
+    for _, config in ipairs(configs) do
+        if config.status ~= 0 then
+            build_success = build_success + 1
+        else
+            build_fail = build_fail + 1
+        end
+    end
+    logger.info("Build success: "..build_success)
+    logger.info("Build fail: "..build_fail)
+    logger.info("--------------------------------------------------")
 end
 
 -- if test is true, then test the bootloader
@@ -294,6 +309,9 @@ if args.test then
     for _, config in ipairs(configs) do
         -- test the bootloader
         local status, err = test.test_bootloader(config)
+        -- save the status of the test in the config object
+        config.test_status = status
+        config.test_error = err
         if not status then
             logger.error("Error while testing bootloader")
             logger.error(err)
@@ -301,6 +319,21 @@ if args.test then
             logger.info("Bootloader tested successfully for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)
         end
     end
+    -- print a summary of the test
+    logger.info("--------------------------------------------------")
+    logger.info("Test summary: ")
+    local test_success = 0
+    local test_fail = 0
+    for _, config in ipairs(configs) do
+        if config.status ~= 0 then
+            test_success = test_success + 1
+        else
+            test_fail = test_fail + 1
+        end
+    end
+    logger.info("Test success: "..test_success)
+    logger.info("Test fail: "..test_fail)
+    logger.info("--------------------------------------------------")
 end
 
 -- print the remaining arguments if any

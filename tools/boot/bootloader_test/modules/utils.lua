@@ -206,4 +206,28 @@ end
 function utils.get_cwd()
     return utils.capture_execute("pwd")
 end
+
+-- sleep for n seconds
+function utils.sleep(time)
+    local start = os.clock()
+    while os.clock() - start <= time do end
+end
+
+-- timeout execute a command
+function utils.sleepy_execute(cmd, timeout)
+    local pid = utils.execute(cmd)
+    utils.sleep(timeout)
+    return pid
+end
+
+-- check if a process is running
+function utils.is_process_running(pid)
+    local _,msg,ret = os.execute("kill -0 "..pid)
+    if ret == 0 then
+        return true
+    else
+        return false
+    end
+end
+
 return utils
