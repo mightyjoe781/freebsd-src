@@ -230,4 +230,12 @@ function utils.is_process_running(pid)
     end
 end
 
+-- read file contents
+function utils.read_file(file)
+    local f = io.open(file, "rb")
+    if not f then return nil end
+    local content = f:read("*all")
+    f:close()
+    return content
+end
 return utils
