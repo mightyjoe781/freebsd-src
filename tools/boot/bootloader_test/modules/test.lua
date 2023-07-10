@@ -41,7 +41,10 @@ end
 function test.run_bootloader_config(config)
     -- return the status of running the shell script in the config
     -- but we attach a time to kill the process if it runs too long 2 minutes
-    local script = SCRIPT_DIR.."/"..config.machine_combo.."/freebsd-test.sh"
+    local machine = config.architecture             -- required
+    local machine_arch = config.machine_arch or build.get_machine_arch(machine)
+    local machine_combo = build.get_machine_combo(machine, machine_arch)
+    local script = SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
     -- now try to run the script
     local pid = utils.sleepy_execute(script, 120)
     if utils.is_process_running(pid) then
