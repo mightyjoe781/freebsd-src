@@ -97,6 +97,10 @@ local function get_machine_combo(machine, machine_arch)
     end
 end
 
+-- externize above two function for testing
+build.get_machine_arch = get_machine_arch
+build.get_machine_combo = get_machine_combo
+
 local function validate_config(config)
     -- validate the config
     -- check if the config is valid

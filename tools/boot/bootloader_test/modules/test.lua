@@ -9,6 +9,7 @@ local parser = require('modules.parser')
 local zfs = require('modules.zfs')
 local ufs = require('modules.ufs')
 local build = require('modules.build')
+local logger = require('modules.logger')
 
 --------------------------------------------------------------------------------
 --                                constants
@@ -56,16 +57,21 @@ function test.run_bootloader_config(config)
 end
 
 function test.test_bootloader(config)
-    local script = SCRIPT_DIR.."/"..config.machine_combo.."/freebsd-test.sh"
+    local machine = config.architecture             -- required
+    local machine_arch = config.machine_arch or build.get_machine_arch(machine)
+    local machine_combo = build.get_machine_combo(machine, machine_arch)
+    local script = SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
 
-    local cmd_out = utils.capture_execute(script, false)
+    -- read contents of the script
+    local cmd = utils.read_file(script)
+    local cmd_out = utils.capture_execute(cmd, true)
     -- check if cmd_out has the string that we wrote in rc script
-    -- echo "RC COMMAND RUNNING -- SUCCESS!!!"
-    
-    if string.find(cmd_out, "RC COMMAND RUNNING -- SUCCESS!!!") then
-        return true, "Bootloader test passed"
+    -- match for "RC COMMAND RUNNING -- SUCCESS!!!"
+
+    if string.find(cmd_out, "RC COMMAND RUNNING %-%- SUCCESS!!!") then
+        return true, "Bootloader test passed."
     else
-        return false, "Bootloader test failed"
+        return false, "Bootloader test failed."
     end
 end
 
