@@ -74,8 +74,7 @@ local build = {
 --                               internal functions
 --------------------------------------------------------------------------------
 
-build.get_machine_arch = freebsd_utils.get_machine_arch
-local get_machine_combo = build.get_machine_combo
+local get_machine_combo = freebsd_utils.get_machine_combo
 local find_flavour = freebsd_utils.find_flavour
 
 local function validate_config(config)
@@ -434,7 +433,7 @@ function build.build_freebsd_bootloader_tree(config)
     local linuxboot_edk2 = config.linuxboot_edk2 
 
     -- for updating cache
-    local flavour = config.flavour or find_flavour(arch)
+    local flavour = config.flavour or freebsd_utils.find_flavour(arch)
     local FREEBSD_VERSION = config.freebsd_version or build.FREEBSD_VERSION
     local img_filename = config.img_filename or freebsd_utils.get_img_filename(machine_combo, flavour, FREEBSD_VERSION)
     local img_url = config.img_url or freebsd_utils.get_img_url(machine, machine_arch, img_filename, FREEBSD_VERSION)
