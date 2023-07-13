@@ -3,7 +3,6 @@
 --------------------------------------------------------------------------------
 --                                import modules
 --------------------------------------------------------------------------------
-local defaults      = require('modules.defaults')
 local freebsd_utils = require('modules.freebsd_utils')
 local utils         = require('modules.utils')
 local logger        = require('modules.logger')
