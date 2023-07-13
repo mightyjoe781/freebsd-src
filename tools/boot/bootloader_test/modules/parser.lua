@@ -171,12 +171,6 @@ end
 
 -- fix the config file
 function parser.fix_config(config)
-    -- validate the config
-    local valid, err = parser.validate_recipe(config)
-    if not valid then
-        return nil, err
-    end
-
     -- fix the config
     -- fix if config passes ':' in the architecture
     if freebsd_utils.is_arch_string(config.architecture) then
@@ -187,6 +181,7 @@ function parser.fix_config(config)
         config.machine = config.architecture or config.machine
         config.machine_arch = config.machine_arch or freebsd_utils.get_machine_architecture(config.machine)
     end
-    
+    return config
 end
+
 return parser
