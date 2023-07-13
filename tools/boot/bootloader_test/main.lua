@@ -258,17 +258,18 @@ end
 
 -- if build is true, then build the bootloader
 if args.build then
-    logger.info("Building the bootloader")
+    logger.info("Starting bootloader build...")
     -- build the bootloader
     -- for each config object in configs
     for _, config in ipairs(configs) do
         -- build the bootloader
+        logger.info("Building bootloader for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)
         local status, err = build.build_bootloader(config)
         -- store the status of the build in the config object
         config.build_status = status
         config.build_error = err
         if not status then
-            logger.error("Error while building bootloader")
+            logger.error("Error while building bootloader for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)
             logger.error(err)
         else
             logger.info("Bootloader built successfully for combination: "..config.architecture.."-"..config.filesystem.."-"..config.interface.."-"..config.encryption)

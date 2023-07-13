@@ -10,6 +10,7 @@ local parser = {
 }
 local combination = require('modules.combination')
 local utils = require('modules.utils')
+local freebsd_utils = require('modules.freebsd_utils')
 local logger = require('modules.logger')
 
 -- a config blueprint for building the bootloader
@@ -140,6 +141,7 @@ function parser.get_all_configurations(file, filter_combination)
                 combination_expression = regex_combination,
                 recipe = recipe
             }
+            config = parser.fix_config(config)
             table.insert(configs, config)
         end
         -- print all valid_regex_combinations
@@ -167,4 +169,24 @@ function parser.get_all_configurations(file, filter_combination)
     return filtered_configs
 end
 
+-- fix the config file
+function parser.fix_config(config)
+    -- validate the config
+    local valid, err = parser.validate_recipe(config)
+    if not valid then
+        return nil, err
+    end
+
+    -- fix the config
+    -- fix if config passes ':' in the architecture
+    if freebsd_utils.is_arch_string(config.architecture) then
+        local m, ma = freebsd_utils.get_machine_and_machine_arch(config.architecture)
+        config.machine = config.machine or m
+        config.machine_arch = config.machine_arch or ma
+    else
+        config.machine = config.architecture or config.machine
+        config.machine_arch = config.machine_arch or freebsd_utils.get_machine_architecture(config.machine)
+    end
+    
+end
 return parser

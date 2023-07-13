@@ -3,11 +3,10 @@
 --------------------------------------------------------------------------------
 --                                import modules
 --------------------------------------------------------------------------------
+local freebsd_utils = require('modules.freebsd_utils')
 local utils = require('modules.utils')
 local posix = require('posix')
 local parser = require('modules.parser')
-local zfs = require('modules.zfs')
-local ufs = require('modules.ufs')
 local logger = require('modules.logger')
 
 
@@ -75,31 +74,9 @@ local build = {
 --                               internal functions
 --------------------------------------------------------------------------------
 
--- constants
-local ARCH = {"amd64:amd64", "i386:i386", "arm64:aarch64", "arm:armv7", "powerpc:powerpc", "powerpc64:powerpc64", "riscv64:riscv64", "powerpc64le:powerpc64le"}
-
--- find the machine architecure from machine
-local function get_machine_arch(arch)
-    for _, arch_string in ipairs(ARCH) do
-        local machine, machine_arch = string.match(arch_string, "(%w+):(%w+)")
-        if machine == arch then
-            return machine_arch
-        end
-    end
-    return nil
-end
-
-local function get_machine_combo(machine, machine_arch)
-    if machine ~= machine_arch then
-        return machine.."-"..machine_arch
-    else
-        return machine
-    end
-end
-
--- externize above two function for testing
-build.get_machine_arch = get_machine_arch
-build.get_machine_combo = get_machine_combo
+build.get_machine_arch = freebsd_utils.get_machine_arch
+local get_machine_combo = build.get_machine_combo
+local find_flavour = freebsd_utils.find_flavour
 
 local function validate_config(config)
     -- validate the config
@@ -110,7 +87,7 @@ local function validate_config(config)
     local err_code = 0
 
     -- check if required keys are present in config or not
-    local required_keys = {"architecture", "filesystem", "interface", "encryption", "linuxboot_edk2"}
+    local required_keys = {"architecture", "filesystem", "interface", "encryption", "linuxboot_edk2", "machine", "machine_arch"}
     for _, key in ipairs(required_keys) do
         if config[key] == nil then
             err_code = 1
@@ -121,36 +98,12 @@ local function validate_config(config)
     return err_code, err_msg
 end
 
-local function validate_evaluated_config(config)
-
-end
-
--- function that finds flavor from arch name and returns it
-local function find_flavour(arch)
-    local machine, _ = string.match(arch, "(%w+):(%w+)")
-    local flavour
-    -- for arm64, we have GENERICSD images only
-    if machine == "arm64" then
-      flavour = "GENERICSD"
-    else
-      -- else download bootonly.iso images
-      flavour = "bootonly.iso"
-    end
-    return flavour
-end
-
 --------------------------------------------------------------------------------
 --                                update_freebsd_img_cache
 --------------------------------------------------------------------------------
 
-local function get_img_filename(machine_combo, flavor, version)
-    local filename ="FreeBSD-"..version.."-RELEASE-"..machine_combo.."-"..flavor
-    return filename
-end
-local function get_img_url(machine, machine_arch, img_filename, version)
-    local url = build.URLBASE.."/"..machine.."/"..machine_arch.."/ISO-IMAGES/"..version.."/"..img_filename..".xz"
-    return url
-end
+local get_img_filename = freebsd_utils.get_img_filename
+local get_img_url = freebsd_utils.get_img_url
 
 local function update_freebsd_img(file, img_url)
     -- if file exists in cache, return
@@ -457,59 +410,52 @@ function build.build_freebsd_bootloader_tree(config)
 
     -- rest all we will figure out from the config
     -- extract required items from config
-    logger.debug("Debug config")
-    logger.debug(utils.print_table(config))
     
-    logger.debug("Running validation on config")
+    logger.info("Validating config")
     local code, msg = validate_config(config)
-    -- if code == 1 then return code, msg
     if code ~= 0 then
+        logger.info("Validation failed")
+        logger.info("Error: "..msg)
+        logger.info(utils.print_table(config))
         return code, msg
     end
-    logger.debug("Validation successful")
+    logger.info("Validation passed")
 
-    
-    -- fix if config passes ':' in the architecture
-    if config.architecture:find(":") then
-        config.architecture = config.architecture:sub(1, config.architecture:find(":")-1)
-        config.machine_arch = config.architecture:sub(config.architecture:find(":")+1)
-    end
-
-    local machine = config.architecture             -- required
-    local machine_arch = config.machine_arch or get_machine_arch(machine)
+    local machine = config.machine
+    local machine_arch = config.machine_arch
     local machine_combo = get_machine_combo(machine, machine_arch)
-    local arch = machine..":"..machine_arch         -- just for consistency with previous code
+    local arch = machine..":"..machine_arch
 
     -- other important configs
-    local flavour = config.flavour or find_flavour(arch)
     local filesystem = config.filesystem
     local interface = config.interface
     local encryption = nil or config.encryption
     if encryption == "none" then encryption = nil end -- bad practice, convetion already established lol
-    local linuxboot_edk2 = false or config.linuxboot_edk2
+    local linuxboot_edk2 = config.linuxboot_edk2 
 
     -- for updating cache
+    local flavour = config.flavour or find_flavour(arch)
     local FREEBSD_VERSION = config.freebsd_version or build.FREEBSD_VERSION
-    local img_filename = config.img_filename or get_img_filename(machine_combo, flavour, FREEBSD_VERSION)
-    local img_url = config.img_url or get_img_url(machine, machine_arch, img_filename, FREEBSD_VERSION)
+    local img_filename = config.img_filename or freebsd_utils.get_img_filename(machine_combo, flavour, FREEBSD_VERSION)
+    local img_url = config.img_url or freebsd_utils.get_img_url(machine, machine_arch, img_filename, FREEBSD_VERSION)
 
 
     -- log all the configs important for this build
-    logger.debug("Machine: "..machine)
-    logger.debug("Machine Arch: "..machine_arch)
-    logger.debug("Machine Combo: "..machine_combo)
-    logger.debug("Arch: "..arch)
-    logger.debug("Flavour: "..flavour)
-    logger.debug("Filesystem: "..filesystem)
-    logger.debug("Interface: "..interface)
+    logger.debug("Arch:             "..arch)
+    logger.debug("Machine:          "..machine)
+    logger.debug("Machine Arch:     "..machine_arch)
+    logger.debug("Machine Combo:    "..machine_combo)
+    logger.debug("Filesystem:       "..filesystem)
+    logger.debug("Interface:        "..interface)
     if encryption ~= nil then 
-        logger.debug("Encryption: "..encryption) 
+        logger.debug("Encryption:        "..encryption) 
     else  
-        logger.debug("Encryption: None")
+        logger.debug("Encryption:        None")
     end
-    logger.debug("Linuxboot EDK2: "..tostring(linuxboot_edk2))
-    logger.debug("FreeBSD Version: "..FREEBSD_VERSION)
-    logger.debug("Image Filename: "..img_filename)
+    logger.debug("Flavour:          "..flavour)
+    logger.debug("Linuxboot EDK2:   "..tostring(linuxboot_edk2))
+    logger.debug("FreeBSD Version:  "..FREEBSD_VERSION)
+    logger.debug("Image Filename:   "..img_filename)
     logger.debug("Image URL: "..img_url)
 
     -- update_freebsd_img_cache(machine, machine_arch, flavour, FREEBSD_VERSION)
