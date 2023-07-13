@@ -3,13 +3,10 @@
 --------------------------------------------------------------------------------
 --                                import modules
 --------------------------------------------------------------------------------
-local utils = require('modules.utils')
-local posix = require('posix')
-local parser = require('modules.parser')
-local zfs = require('modules.zfs')
-local ufs = require('modules.ufs')
-local build = require('modules.build')
-local logger = require('modules.logger')
+local defaults      = require('modules.defaults')
+local freebsd_utils = require('modules.freebsd_utils')
+local utils         = require('modules.utils')
+local logger        = require('modules.logger')
 
 --------------------------------------------------------------------------------
 --                                constants
@@ -22,12 +19,12 @@ local test = {
     _description = "test module",
     _license = "BSD 3-Clause"
 }
+
 local HOME = os.getenv("HOME")
 local QEMU_BIN = "/usr/local/bin/qemu-system-x86_64"
 
 local STAND_ROOT = HOME.."/stand-test-root"
-local SRCTOP = utils.capture_execute("make -V SRCTOP", false)
-SCRIPT_DIR = build.SCRIPT_DIR or STAND_ROOT.."/scripts"
+local SCRIPT_DIR = STAND_ROOT.."/scripts" -- this is where the scripts are stored by the build script
 
 --------------------------------------------------------------------------------
 --                                functions
@@ -35,49 +32,70 @@ SCRIPT_DIR = build.SCRIPT_DIR or STAND_ROOT.."/scripts"
 
 -- validates the config
 function test.validate_bootloader_config(config)
-
-end
-
--- runs the bootloader test
-function test.run_bootloader_config(config)
-    -- return the status of running the shell script in the config
-    -- but we attach a time to kill the process if it runs too long 2 minutes
-    local machine = config.architecture             -- required
-    local machine_arch = config.machine_arch or build.get_machine_arch(machine)
-    local machine_combo = build.get_machine_combo(machine, machine_arch)
-    local script = SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
-    -- now try to run the script
-    local pid = utils.sleepy_execute(script, 120)
-    if utils.is_process_running(pid) then
-        posix.kill(pid, posix.SIGKILL)
-        return false, "Process "..pid.." timed out"
-    else
-        return true, "Process "..pid.." exited"
+    -- check if the config has the required fields
+    local required_fields = {
+        "machine",
+        "machine_arch"
+    }
+    -- check if the config has the required fields
+    for _, field in ipairs(required_fields) do
+        if not config[field] then
+            return false, "Config missing field: "..field
+        end
     end
+
+    -- check if the script exists
+    local machine_combo = freebsd_utils.get_machine_combo(config.machine, config.machine_arch)
+    local script = SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
+    if not utils.file_exists(script) then
+        return false, "Script "..script.." does not exist"
+    end
+
+    -- check if the script is executable
+    --[[
+    if not utils.is_executable(script) then
+        return false, "Script "..script.." is not executable"
+    end
+    ]]
+
+    return true
 end
 
 function test.test_bootloader(config)
-    local machine = config.architecture             -- required
-    local machine_arch = config.machine_arch or build.get_machine_arch(machine)
-    local machine_combo = build.get_machine_combo(machine, machine_arch)
+    logger.info("Validating bootloader config")
+    -- validate the config
+    local status, err = test.validate_bootloader_config(config)
+    if not status then
+        logger.info("Bootloader config is invalid")
+        logger.info(err)
+        return false, err
+    end
+    logger.info("Bootloader config is valid")
+
+    local machine = config.machine
+    local machine_arch = config.machine_arch
+    local machine_combo = freebsd_utils.get_machine_combo(machine, machine_arch)
     local script = SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
 
     -- read contents of the script
+    logger.info("Reading script contents")
     local cmd = utils.read_file(script)
+    logger.debug("Script contents: "..cmd)
+    logger.info("Running qemu with script")
+    -- TODO: add some loading message : ETA or time elapsed or something and move this to new function
     local cmd_out = utils.capture_execute(cmd, true)
+    logger.info("qemu run complete")
+    logger.debug("qemu run output: "..cmd_out)
+
+    logger.info("Checking if bootloader test passed")
     -- check if cmd_out has the string that we wrote in rc script
     -- match for "RC COMMAND RUNNING -- SUCCESS!!!"
-
     if string.find(cmd_out, "RC COMMAND RUNNING %-%- SUCCESS!!!") then
         return true, "Bootloader test passed."
     else
         return false, "Bootloader test failed."
     end
 end
-
-
-
-
 
 -- default values
 return test
