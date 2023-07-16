@@ -1,9 +1,11 @@
 #!/usr/libexec/flua
 
--- Use utils.lua as a library to import functions
-
-local utils = { _version = "0.1.0" }
-local posix = require('posix')
+local utils = {
+    _version = "0.1.0",
+    _name = "utils",
+    _description = "A library of utility functions for lua",
+    _license = "BSD 3-Clause"
+}
 
 -- generate regex from args
 function utils.generate_regex(arch, filesystem, interface, encryption)

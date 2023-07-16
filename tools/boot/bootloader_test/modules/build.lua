@@ -36,7 +36,10 @@ local build = {
     FREEBSD_VERSION = "13.1",
     URLBASE = "https://download.freebsd.org/ftp/releases",
 
-    _version = "0.1.0" 
+    _version = "0.1.0",
+    _name = "build",
+    _description = "A library of functions for building the bootloader",
+    _license = "BSD 3-Clause"
 }
 --------------------------------------------------------------------------------
 --[[

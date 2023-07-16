@@ -13,7 +13,11 @@ local combination = {
     encryption = {"geli", "none"},
     blacklist_regex = {"riscv64-*-mbr-*"},
     linuxboot_edk2 = {"amd64-*-*-*","arm64-*-*-*"},
-    _version = "0.1.0" 
+
+    _version = "0.1.0",
+    _name = "combination",
+    _description = "combination module",
+    _license = "BSD 3-Clause"
 }
 
 

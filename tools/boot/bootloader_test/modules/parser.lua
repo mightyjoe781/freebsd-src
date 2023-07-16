@@ -1,12 +1,14 @@
 #!/usr/libexec/flua
 
-
 local parser = { 
-    _version = "0.1.0" ,
     _required_config_keys = {
         "arch",
         "regex_combination"
-    }
+    },
+    _version = "0.1.0" ,
+    _name = "parser",
+    _description = "A library of functions for parsing the config file",
+    _license = "BSD 3-Clause"
 }
 local combination = require('modules.combination')
 local utils = require('modules.utils')

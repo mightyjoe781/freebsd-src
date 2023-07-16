@@ -12,6 +12,7 @@ local freebsd_utils = {
         "riscv64:riscv64",
         "powerpc64le:powerpc64le"
     },
+
     _version = "0.1.0",
     _name = "freebsd_utils",
     _description = "freebsd utils module",
