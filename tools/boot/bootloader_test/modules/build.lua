@@ -77,8 +77,7 @@ local build = {
 --                               internal functions
 --------------------------------------------------------------------------------
 
-local get_machine_combo = freebsd_utils.get_machine_combo
-local find_flavour = freebsd_utils.find_flavour
+build.get_machine_combo = freebsd_utils.get_machine_combo
 
 local function validate_config(config)
     -- validate the config
@@ -125,7 +124,7 @@ end
 -- function updates freebsd_img_cache
 local function update_freebsd_img_cache(machine, machine_arch, flavor, version)
     -- check if image exists in cache
-    local machine_combo = get_machine_combo(machine, machine_arch)
+    local machine_combo = build.get_machine_combo(machine, machine_arch)
     local file = get_img_filename(machine_combo, flavor, version)
     local img_url = get_img_url(machine, machine_arch, file, version)
     update_freebsd_img(file, img_url)
@@ -157,7 +156,7 @@ build.get_loader_conf = freebsd_utils.get_loader_conf
 local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, rc_conf, loader_conf)
     logger.debug("Making freebsd minimal trees")
     -- local img_filename = img_filename         -- e.g. FREEBSD-13.0-RELEASE-amd64-bootonly.iso
-    local machine_combo = get_machine_combo(machine, machine_arch)  -- e.g. amd64-amd64
+    local machine_combo = build.get_machine_combo(machine, machine_arch)  -- e.g. amd64-amd64
     local tree = build.TREE_DIR.."/"..machine_combo.."/freebsd/"   -- e.g. /trees/arm64-aarch64/freebsd
     logger.debug("Making freebsd minimal trees for "..machine_combo.." in "..tree)
 
@@ -226,7 +225,7 @@ end
 --                                make_freebsd_test_trees
 --------------------------------------------------------------------------------
 local function make_freebsd_test_trees(machine, machine_arch)
-    local machine_combo = get_machine_combo(machine, machine_arch)
+    local machine_combo = build.get_machine_combo(machine, machine_arch)
     local tree = build.TREE_DIR.."/"..machine_combo.."/test-stand"
 
     utils.execute("mkdir -p "..tree)
@@ -251,7 +250,7 @@ end
 --------------------------------------------------------------------------------
 build.get_boot_efi = freebsd_utils.get_boot_efi_name
 local function make_freebsd_esps(machine, machine_arch)
-    local machine_combo = get_machine_combo(machine, machine_arch)
+    local machine_combo = build.get_machine_combo(machine, machine_arch)
     local tree = build.TREE_DIR.."/"..machine_combo.."/test-stand"
     local esp = build.TREE_DIR.."/"..machine_combo.."/freebsd-esp"
 
@@ -272,7 +271,7 @@ end
 --------------------------------------------------------------------------------
 build.get_fstab = freebsd_utils.get_fstab_file
 local function make_freebsd_images(machine, machine_arch)
-    local machine_combo = get_machine_combo(machine, machine_arch)
+    local machine_combo = build.get_machine_combo(machine, machine_arch)
 
     local src = build.TREE_DIR.."/"..machine_combo.."/freebsd-esp"
     local dir = build.TREE_DIR.."/"..machine_combo.."/freebsd"
@@ -305,7 +304,7 @@ end
 --------------------------------------------------------------------------------
 local function make_freebsd_scripts(machine, machine_arch)
 
-    local machine_combo = get_machine_combo(machine, machine_arch)
+    local machine_combo = build.get_machine_combo(machine, machine_arch)
     local bios_code = build.BIOS_DIR.."/edk2-"..machine_combo.."-code.fd"
     local bios_vars = build.BIOS_DIR.."/edk2-"..machine_combo.."-vars.fd"
 
@@ -400,7 +399,7 @@ function build.build_freebsd_bootloader_tree(config)
 
     local machine = config.machine
     local machine_arch = config.machine_arch
-    local machine_combo = get_machine_combo(machine, machine_arch)
+    local machine_combo = build.get_machine_combo(machine, machine_arch)
     local arch = machine..":"..machine_arch
 
     -- other important configs
@@ -411,7 +410,7 @@ function build.build_freebsd_bootloader_tree(config)
     local linuxboot_edk2 = config.linuxboot_edk2 
 
     -- for updating cache
-    local flavour = config.flavour or freebsd_utils.find_flavour(arch)
+    local flavour = config.flavour or freebsd_utils.find_flavor(arch)
     local FREEBSD_VERSION = config.freebsd_version or build.FREEBSD_VERSION
     local img_filename = config.img_filename or freebsd_utils.get_img_filename(machine_combo, flavour, FREEBSD_VERSION)
     local img_url = config.img_url or freebsd_utils.get_img_url(machine, machine_arch, img_filename, FREEBSD_VERSION)
