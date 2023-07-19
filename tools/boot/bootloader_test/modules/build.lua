@@ -151,28 +151,8 @@ local function check_override(machine_combo)
     return true, ""
 end
 
-local function get_rc_conf(machine, machine_arch)
-    -- simple etc/rc
-    local rc = [[
-#!/bin/sh
-sysctl machdep.bootmethod
-echo "RC COMMAND RUNNING -- SUCCESS!!!"
-halt -p
-]]
-    return rc
-end
-
-local function get_loader_conf(machine, machine_arch)
-    -- simple boot/loader.conf
-    local loader = [[
-comconsole_speed=115200
-autoboot_delay=2
-zfs_load="YES"
-boot_verbose=yes
-kern.cfg.order="acpi,fdt"
-]]
-    return loader
-end
+build.get_rc_conf = freebsd_utils.get_rc_conf
+build.get_loader_conf = freebsd_utils.get_loader_conf
 
 local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, rc_conf, loader_conf)
     logger.debug("Making freebsd minimal trees")
@@ -203,7 +183,7 @@ local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, r
     -- save rc in a file, but due to weird lua io.open() behaviour, we need create a file first
     -- make it executable
     logger.debug("Writing rc.conf to "..tree.."/etc/rc")
-    local rc = rc_conf or get_rc_conf(machine, machine_arch)
+    local rc = rc_conf or build.get_rc_conf(machine, machine_arch)
     utils.write_data_to_file(tree.."/etc/rc", rc)
     utils.execute("chmod +x "..tree.."/etc/rc")
 
@@ -237,7 +217,7 @@ local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, r
 
     -- loader config
     logger.debug("Writing loader.conf to "..tree.."/boot/loader.conf")
-    local loader = loader_conf or get_loader_conf(machine, machine_arch)
+    local loader = loader_conf or build.get_loader_conf(machine, machine_arch)
     utils.write_data_to_file(tree.."/boot/loader.conf", loader)
 
 end
@@ -269,6 +249,7 @@ end
 --------------------------------------------------------------------------------
 --                                make_freebsd_esps
 --------------------------------------------------------------------------------
+build.get_boot_efi = freebsd_utils.get_boot_efi_name
 local function make_freebsd_esps(machine, machine_arch)
     local machine_combo = get_machine_combo(machine, machine_arch)
     local tree = build.TREE_DIR.."/"..machine_combo.."/test-stand"
@@ -281,19 +262,15 @@ local function make_freebsd_esps(machine, machine_arch)
     logger.debug("Copying files from "..tree.." to "..esp)
     -- make directory TREE_DIR/efi/boot
     utils.execute("mkdir -p "..esp.."/efi/boot")
-    if machine_arch == "amd64" then
-        utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootx64.efi")
-    elseif machine_arch == "i386" then
-        utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootia32.efi")
-    elseif machine_arch == "arm64" then
-        utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootaa64.efi")
-    elseif machine_arch == "arm" then
-        utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/bootarm.efi")
-    end
+
+    -- copy loader.efi to efi/boot/xxx.efi
+    local boot_efi = build.get_boot_efi(machine_arch)
+    utils.execute("cp "..tree.."/boot/loader.efi "..esp.."/efi/boot/"..boot_efi)
 end
 --------------------------------------------------------------------------------
 --                                make_freebsd_images
 --------------------------------------------------------------------------------
+build.get_fstab = freebsd_utils.get_fstab_file
 local function make_freebsd_images(machine, machine_arch)
     local machine_combo = get_machine_combo(machine, machine_arch)
 
@@ -309,9 +286,7 @@ local function make_freebsd_images(machine, machine_arch)
     utils.execute("mkdir -p "..dir2.."/etc")
 
     -- set fstab file
-    local fstab = [[
-/dev/ufs/root / ufs rw 1 1
-]]
+    local fstab = build.get_fstab()
     -- save this fstab file
     utils.write_data_to_file(dir2.."/etc/fstab", fstab)
 
@@ -461,11 +436,11 @@ function build.build_freebsd_bootloader_tree(config)
     logger.debug("Image URL: "..img_url)
 
     -- update_freebsd_img_cache(machine, machine_arch, flavour, FREEBSD_VERSION)
-    update_freebsd_img(img_filename, img_url)
+    update_freebsd_img_cache(machine, machine_arch, flavour, FREEBSD_VERSION)
 
     -- craft a minimal tree, either supply correct rc or loader conf or get them
-    local rc_conf = config.rc_conf or get_rc_conf(machine, machine_arch)
-    local loader_conf = config.loader_conf or get_loader_conf(machine, machine_arch)
+    local rc_conf = config.rc_conf or freebsd_utils.get_rc_conf(machine, machine_arch)
+    local loader_conf = config.loader_conf or freebsd_utils.get_loader_conf(machine, machine_arch)
     logger.debug("RC Conf: "..rc_conf)
     logger.debug("Loader Conf: "..loader_conf)
     make_freebsd_minimal_trees(machine, machine_arch, img_filename, rc_conf, loader_conf)

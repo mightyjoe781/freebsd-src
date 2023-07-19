@@ -81,7 +81,7 @@ function freebsd_utils.get_img_url(urlbase, m, ma, version)
 end
 
 -- return rc_conf for the m, ma
-function freebsd_utils.get_rc_conf(machine, machine_arch)
+function freebsd_utils.get_rc_conf(m, ma)
     -- simple etc/rc
     local rc = [[
 #!/bin/sh
@@ -93,7 +93,7 @@ halt -p
 end
 
 -- returns loader.conf for the m, ma
-function freebsd_utils.get_loader_conf(machine, machine_arch)
+function freebsd_utils.get_loader_conf(m, ma)
     -- simple boot/loader.conf
     local loader = [[
 comconsole_speed=115200
@@ -106,13 +106,37 @@ kern.cfg.order="acpi,fdt"
 end
 
 -- returns fstab file
-function freebsd_utils.get_fstab()
-    -- simple fstab
-    local fstab = [[
-# Device        Mountpoint      FStype  Options Dump    Pass#
+function freebsd_utils.get_fstab_file()
+    -- fstab table for different fs
+    local fs = "ufs"
+--# Device        Mountpoint      FStype  Options Dump    Pass#
+    local fstab_table = {
+        ufs = [[
 /dev/ufs/root   /               ufs     rw      1       1
 ]]
-    return fstab
+    }
+    return fstab_table[fs]
+end
+
+function freebsd_utils.get_boot_efi_name(ma)
+    -- make a table of machine arch and boot efi name
+    local boot_efi_name = {
+        amd64 = "bootx64.efi",
+        i386 = "bootia32.efi",
+        armv7 = "bootarm.efi",
+        aarch64 = "bootaa64.efi",
+        powerpc = "bootppc64.efi",
+        powerpc64 = "bootppc64.efi",
+        riscv64 = "bootriscv64.efi",
+        powerpc64le = "bootppc64le.efi"
+    }
+    -- check if invalid machine arch
+    return boot_efi_name[ma]
+end
+
+function freebsd_utils.get_qemu_script(m, ma)
+
+
 end
 
 return freebsd_utils
