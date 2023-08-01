@@ -273,13 +273,13 @@ build.get_fstab = freebsd_utils.get_fstab_file
 local function make_freebsd_images(m, ma, fs)
 
     local machine_combo = build.get_machine_combo(m, ma)
-    local fs = fs or "ufs"
+    local fs_type = fs or "ufs"
 
     local src = build.TREE_DIR.."/"..machine_combo.."/freebsd-esp"
     local dir = build.TREE_DIR.."/"..machine_combo.."/freebsd"
     local dir2 = build.TREE_DIR.."/"..machine_combo.."/test-stand"
     local esp = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".esp"
-    local fs_file = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo.."."..fs
+    local fs_file = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo.."."..fs_type
     local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".img"
 
     -- make directories
@@ -296,7 +296,7 @@ local function make_freebsd_images(m, ma, fs)
     local fs_commands = {
         freebsd_utils.get_esp_recipe(esp,src),
         freebsd_utils.get_fs_recipe(fs_file,dir,dir2),
-        freebsd_utils.get_img_command(esp,fs_file,img)
+        freebsd_utils.get_img_command(esp,fs_type,img)
     }
 
     for _, cmd in ipairs(fs_commands) do
