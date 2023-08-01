@@ -296,7 +296,7 @@ local function make_freebsd_images(m, ma, fs)
     local fs_commands = {
         freebsd_utils.get_esp_recipe(esp,src),
         freebsd_utils.get_fs_recipe(fs_file,dir,dir2),
-        freebsd_utils.get_img_command(esp,fs_type,img)
+        freebsd_utils.get_img_command(esp,fs_type,fs_file,img)
     }
 
     for _, cmd in ipairs(fs_commands) do

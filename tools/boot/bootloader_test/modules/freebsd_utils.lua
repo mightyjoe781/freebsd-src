@@ -181,13 +181,13 @@ function freebsd_utils.get_fs_recipe(fs, dir1, dir2)
     -- copies over content of the dir1, dir2 into the fs indicated
     return "makefs -t ffs -B little -s 200m -o label=root "..fs.." "..dir1.." "..dir2
 end
-function freebsd_utils.get_img_command(esp, fs, img)
+function freebsd_utils.get_img_command(esp, fs_type, fs_file, img)
     -- if fs == "zfs" then
     --     return "mkimg -s gpt -p efi:="..esp.." -p freebsd-zfs:="..fs.." -o "..img
     -- elseif fs == "ufs" then
     --     return "mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..fs.." -o "..img
     -- end
-    return "mkimg -s gpt -p efi:="..esp.." -p freebsd-"..fs..":="..fs.." -o "..img
+    return "mkimg -s gpt -p efi:="..esp.." -p freebsd-"..fs_type..":="..fs_file.." -o "..img
 end
 -- returns the qemu script for the m, ma
 function freebsd_utils.get_qemu_script(m, ma, img, bios_code, bios_vars, raw_disk)
