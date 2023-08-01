@@ -304,7 +304,6 @@ local function make_freebsd_images(m, ma, fs)
     end
 
 end
-build.make_freebsd_images("amd64","amd64","ufs")
 
 --------------------------------------------------------------------------------
 --                                make_freebsd_scripts
