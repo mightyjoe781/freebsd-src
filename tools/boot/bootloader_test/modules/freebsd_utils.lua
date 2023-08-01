@@ -134,9 +134,95 @@ function freebsd_utils.get_boot_efi_name(ma)
     return boot_efi_name[ma]
 end
 
-function freebsd_utils.get_qemu_script(m, ma)
+function freebsd_utils.get_bios_code_name(ma)
+    -- make a table of machine arch and boot efi name
+    local bios_code_name = {
+        amd64 = "boot1.efi",
+        i386 = "boot1.efi",
+        armv7 = "boot1.efi",
+        aarch64 = "boot1.efi",
+        powerpc = "boot1.efi",
+        powerpc64 = "boot1.efi",
+        riscv64 = "boot1.efi",
+        powerpc64le = "boot1.efi"
+    }
+    -- check if invalid machine arch
+    return bios_code_name[ma]
+end
 
+function freebsd_utils.get_bios_vars(ma)
+    -- make a table of machine arch and boot efi name
+    local bios_vars = {
+        amd64 = "boot1.efi",
+        i386 = "boot1.efi",
+        armv7 = "boot1.efi",
+        aarch64 = "boot1.efi",
+        powerpc = "boot1.efi",
+        powerpc64 = "boot1.efi",
+        riscv64 = "boot1.efi",
+        powerpc64le = "boot1.efi"
+    }
+    -- check if invalid machine arch
+    return bios_vars[ma]
+end
 
+function freebsd_utils.get_esp_recipe(esp, src)
+    -- -t msdos : fat32 filesystem
+    -- -o fat_type=32 : 32 or 64 bit fat file
+    -- -o sectors_per_cluster=1 : each cluster will have 1 sector
+    -- -s 100m : size of fs to be 100MB
+    return "makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 -o volume_label=EFISYS -s 100m "..esp.." "..src
+end
+function freebsd_utils.get_fs_recipe(fs, dir1, dir2)
+    -- -t ffs : fast file system
+    -- -B little : little_endian format
+    -- -s 200m : size of fs to be created 200MB
+    -- -o label=root : specifies the label as root
+    -- copies over content of the dir1, dir2 into the fs indicated
+    return "makefs -t ffs -B little -s 200m -o label=root "..fs.." "..dir1.." "..dir2
+end
+function freebsd_utils.get_img_command(esp, fs, img)
+    -- if fs == "zfs" then
+    --     return "mkimg -s gpt -p efi:="..esp.." -p freebsd-zfs:="..fs.." -o "..img
+    -- elseif fs == "ufs" then
+    --     return "mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..fs.." -o "..img
+    -- end
+    return "mkimg -s gpt -p efi:="..esp.." -p freebsd-"..fs..":="..fs.." -o "..img
+end
+-- returns the qemu script for the m, ma
+function freebsd_utils.get_qemu_script(m, ma, img, bios_code, bios_vars, raw_disk)
+    local qemu_bin = "/usr/local/bin/qemu-system-x86_64"
+    local mc = freebsd_utils.get_machine_combo(m, ma)
+
+    local script_file = ""
+    -- set script file
+    if ma == "amd64" then
+      script_file = string.format([[%s -nographic -m 512M \
+      -drive file=%s,if=none,id=drive0,cache=writeback,format=raw \
+      -device virtio-blk,drive=drive0,bootindex=0 \
+      -drive file=%s,format=raw,if=pflash \
+      -monitor telnet::4444,server,nowait \
+      -serial stdio $*]],
+      qemu_bin, img, bios_code, bios_vars)
+
+    elseif ma == "aarch64" then
+      local raw = build.IMAGE_DIR.."/"..mc.."/nvme-test-empty.raw"
+        -- make a raw file
+      script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
+      -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
+      -device virtio-blk,drive=drive0,bootindex=0 \
+      -drive file=%s,format=raw,if=pflash \
+      -drive file=%s,format=raw,if=pflash \
+      -drive file=%s,if=none,id=drive1,cache=writeback,format=raw \
+      -device nvme,serial=deadbeef,drive=drive1 \
+      -monitor telnet::4444,server,nowait \
+      -serial stdio $*]],
+      qemu_bin, img, bios_code, bios_vars, raw)
+
+    end
+
+    return script_file
+    
 end
 
 return freebsd_utils

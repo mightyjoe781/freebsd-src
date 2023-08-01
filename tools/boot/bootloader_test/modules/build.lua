@@ -270,8 +270,10 @@ end
 --                                make_freebsd_images
 --------------------------------------------------------------------------------
 build.get_fstab = freebsd_utils.get_fstab_file
-local function make_freebsd_images(machine, machine_arch)
-    local machine_combo = build.get_machine_combo(machine, machine_arch)
+local function make_freebsd_images(m, ma, fs)
+
+    local machine_combo = build.get_machine_combo(m, ma)
+    local fs = fs or "ufs"
 
     local src = build.TREE_DIR.."/"..machine_combo.."/freebsd-esp"
     local dir = build.TREE_DIR.."/"..machine_combo.."/freebsd"
@@ -290,14 +292,19 @@ local function make_freebsd_images(machine, machine_arch)
     utils.write_data_to_file(dir2.."/etc/fstab", fstab)
 
     logger.debug("Creating image for "..machine_combo)
-    -- makefs command
-    utils.execute("makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 -o volume_label=EFISYS -s100m "..esp.." "..src)
-    -- makefs command for ufs
-    utils.execute("makefs -t ffs -B little -s 200m -o label=root "..ufs.." "..dir.." "..dir2)
-    -- makeimg image
-    utils.execute("mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..ufs.." -o "..img)
+    -- TODO(Externalisation Required): understand bash code for SHELL
+    local fs_commands = {
+        freebsd_utils.get_esp_recipe(esp,src),
+        freebsd_utils.get_fs_recipe(fs,dir,dir2),
+        freebsd_utils.get_img_command(esp,fs,img)
+    }
+
+    for _, cmd in ipairs(fs_commands) do
+        utils.execute(cmd)
+    end
 
 end
+build.make_freebsd_images("amd64","amd64","ufs")
 
 --------------------------------------------------------------------------------
 --                                make_freebsd_scripts
@@ -305,6 +312,7 @@ end
 local function make_freebsd_scripts(machine, machine_arch)
 
     local machine_combo = build.get_machine_combo(machine, machine_arch)
+    -- TODO (Externalisation Required): understand how this works
     local bios_code = build.BIOS_DIR.."/edk2-"..machine_combo.."-code.fd"
     local bios_vars = build.BIOS_DIR.."/edk2-"..machine_combo.."-vars.fd"
 
@@ -345,18 +353,15 @@ local function make_freebsd_scripts(machine, machine_arch)
       -- save this script
       utils.write_data_to_file(script, script_file)
     elseif machine_arch == "aarch64" then
-      local raw = build.IMAGE_DIR.."/"..machine_combo.."/nvme-test-empty.raw"
-
+    --   local raw = build.IMAGE_DIR.."/"..machine_combo.."/nvme-test-empty.raw"
+        -- make a raw file
       local script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
       -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
       -device virtio-blk,drive=drive0,bootindex=0 \
       -drive file=%s,format=raw,if=pflash \
-      -drive file=%s,format=raw,if=pflash \
-      -drive file=%s,if=none,id=drive1,cache=writeback,format=raw \
-      -device nvme,serial=deadbeef,drive=drive1 \
       -monitor telnet::4444,server,nowait \
       -serial stdio $*]],
-      QEMU_BIN, img, bios_code, bios_vars, raw)
+      QEMU_BIN, img, bios_code, bios_vars)
 
       -- save this script
       utils.write_data_to_file(script, script_file)
@@ -447,7 +452,7 @@ function build.build_freebsd_bootloader_tree(config)
     -- make a test tree for testing
     make_freebsd_test_trees(machine, machine_arch)
     make_freebsd_esps(machine, machine_arch)
-    make_freebsd_images(machine, machine_arch)
+    make_freebsd_images(machine, machine_arch, filesystem)
     make_freebsd_scripts(machine, machine_arch)
     -- if all goes well, return 0, nil
     return 0, nil
