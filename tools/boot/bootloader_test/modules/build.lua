@@ -279,7 +279,7 @@ local function make_freebsd_images(m, ma, fs)
     local dir = build.TREE_DIR.."/"..machine_combo.."/freebsd"
     local dir2 = build.TREE_DIR.."/"..machine_combo.."/test-stand"
     local esp = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".esp"
-    local ufs = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".ufs"
+    local fs_file = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo.."."..fs
     local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".img"
 
     -- make directories
@@ -295,8 +295,8 @@ local function make_freebsd_images(m, ma, fs)
     -- TODO(Externalisation Required): understand bash code for SHELL
     local fs_commands = {
         freebsd_utils.get_esp_recipe(esp,src),
-        freebsd_utils.get_fs_recipe(fs,dir,dir2),
-        freebsd_utils.get_img_command(esp,fs,img)
+        freebsd_utils.get_fs_recipe(fs_file,dir,dir2),
+        freebsd_utils.get_img_command(esp,fs_file,img)
     }
 
     for _, cmd in ipairs(fs_commands) do
