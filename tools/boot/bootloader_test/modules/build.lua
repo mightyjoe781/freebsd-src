@@ -270,7 +270,7 @@ end
 --                                make_freebsd_images
 --------------------------------------------------------------------------------
 build.get_fstab = freebsd_utils.get_fstab_file
-local function make_freebsd_images(m, ma, fs)
+local function make_freebsd_images(m, ma, fs, bi)
 
     local machine_combo = build.get_machine_combo(m, ma)
     local fs_type = fs or "ufs"
@@ -296,7 +296,7 @@ local function make_freebsd_images(m, ma, fs)
     local fs_commands = {
         freebsd_utils.get_esp_recipe(esp,src),
         freebsd_utils.get_fs_recipe(fs_file,dir,dir2),
-        freebsd_utils.get_img_command(esp,fs_type,fs_file,img)
+        freebsd_utils.get_img_command(esp,fs_type,fs_file,img, bi)
     }
 
     for _, cmd in ipairs(fs_commands) do
@@ -451,7 +451,7 @@ function build.build_freebsd_bootloader_tree(config)
     -- make a test tree for testing
     make_freebsd_test_trees(machine, machine_arch)
     make_freebsd_esps(machine, machine_arch)
-    make_freebsd_images(machine, machine_arch, filesystem)
+    make_freebsd_images(machine, machine_arch, filesystem,interface)
     make_freebsd_scripts(machine, machine_arch)
     -- if all goes well, return 0, nil
     return 0, nil
