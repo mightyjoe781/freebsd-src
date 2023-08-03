@@ -16,8 +16,9 @@ return {
             -- expression for combination for testing
             a compact possible expression later on for blacklisting define as filesystem-partition-encryption
             a function should evaluate common combination expressions and calculate all possibilities 
+                -- this is acting like filter
         --]]
-        regex_combination = {"ufs-gpt-geli","*-gpt-*","*-*-geli"},
+        regex_combination = {"ufs-gpt-geli","*-*-*","*-*-geli"},
         
         -- several overrides
         mtree_override = "",
