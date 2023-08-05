@@ -287,7 +287,7 @@ local function make_freebsd_images(m, ma, fs, bi)
     utils.execute("mkdir -p "..dir2.."/etc")
 
     -- set fstab file
-    local fstab = build.get_fstab()
+    local fstab = build.get_fstab(fs_type)
     -- save this fstab file
     utils.write_data_to_file(dir2.."/etc/fstab", fstab)
 

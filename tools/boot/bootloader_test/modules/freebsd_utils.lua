@@ -106,13 +106,16 @@ kern.cfg.order="acpi,fdt"
 end
 
 -- returns fstab file
-function freebsd_utils.get_fstab_file()
+function freebsd_utils.get_fstab_file(filesystem)
     -- fstab table for different fs
-    local fs = "ufs"
+    local fs = filesystem or "ufs"
 --# Device        Mountpoint      FStype  Options Dump    Pass#
     local fstab_table = {
         ufs = [[
 /dev/ufs/root   /               ufs     rw      1       1
+]],
+        zfs = [[
+/dev/zfs/root   /               zfs     rw      1       1
 ]]
     }
     return fstab_table[fs]
