@@ -202,7 +202,7 @@ function freebsd_utils.get_img_command(esp, fs_type, fs_file, img, bi)
     --     return "mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..fs.." -o "..img
     -- end
     local cmd = ""
-    cmd = string.format("mkimg -s %s -p efi:=%s -p freebsd-%s:=%s %s", bi, esp, fs_type, fs_file, img)
+    cmd = string.format("mkimg -s %s -p efi:=%s -p freebsd-%s:=%s -o %s", bi, esp, fs_type, fs_file, img)
     return cmd
 end
 -- returns the qemu script for the m, ma
