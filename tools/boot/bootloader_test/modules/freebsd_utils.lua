@@ -184,7 +184,12 @@ function freebsd_utils.get_fs_recipe(fs_type, fs_file, dir1, dir2)
     -- copies over content of the dir1, dir2 into the fs indicated
     local cmd = ""
     if fs_type == "zfs" then
-        cmd = "makefs -t zfs -B little -s 200m -o poolname=tank rootpath=/ "..fs_file.." "..dir1.." "..dir2
+        local size = "200m"
+        local poolname = "tank"
+        local bootfs = "tank"
+        local rootpath = "/"
+        cmd = string.format("makefs -t zfs -s %s -o poolname=%s boofs=%s -o rootpath=%s %s %s %s",size, poolname, bootfs, rootpath, fs_file, dir1, dir2)
+        print(cmd)
     else
         cmd = "makefs -t ffs -B little -s 200m -o label=root "..fs_file.." "..dir1.." "..dir2
     end
