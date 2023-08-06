@@ -115,7 +115,7 @@ function freebsd_utils.get_fstab_file(filesystem)
 /dev/ufs/root   /               ufs     rw      1       1
 ]],
         zfs = [[
-/dev/zfs/root   /               zfs     rw      1       1
+/zroot/ROOT/default   /               zfs     rw      1       1
 ]]
     }
     return fstab_table[fs]
@@ -182,7 +182,13 @@ function freebsd_utils.get_fs_recipe(fs, dir1, dir2)
     -- -s 200m : size of fs to be created 200MB
     -- -o label=root : specifies the label as root
     -- copies over content of the dir1, dir2 into the fs indicated
-    return "makefs -t ffs -B little -s 200m -o label=root "..fs.." "..dir1.." "..dir2
+    local cmd = ""
+    if fs == "zfs" then
+        cmd = "makefs -t zfs -B little -s 200m -o poolname=tank rootpath=/ "..fs.." "..dir1.." "..dir2
+    else
+        cmd = "makefs -t ffs -B little -s 200m -o label=root "..fs.." "..dir1.." "..dir2
+    end
+    return cmd
 end
 function freebsd_utils.get_img_command(esp, fs_type, fs_file, img, bi)
     -- if fs == "zfs" then
