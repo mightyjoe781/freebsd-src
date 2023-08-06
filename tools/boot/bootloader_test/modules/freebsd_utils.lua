@@ -201,11 +201,9 @@ function freebsd_utils.get_img_command(esp, fs_type, fs_file, img, bi)
     -- elseif fs == "ufs" then
     --     return "mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..fs.." -o "..img
     -- end
-    local boot_interface = bi or "gpt"
-    if boot_interface == "mbr" then
-        return "mkimg -s "..boot_interface.." -p efi:="..esp.." -p freebsd:="..fs_file.." -o "..img
-    end
-    return "mkimg -s "..boot_interface.." -p efi:="..esp.." -p freebsd-"..fs_type..":="..fs_file.." -o "..img
+    local cmd = ""
+    cmd = string.format("mkimg -s %s -p efi:=%s -p freebsd-%s:=%s %s", bi, esp, fs_type, fs_file, img)
+    return cmd
 end
 -- returns the qemu script for the m, ma
 function freebsd_utils.get_qemu_script(m, ma, img, bios_code, bios_vars, raw_disk)
