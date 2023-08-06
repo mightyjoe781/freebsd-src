@@ -12,7 +12,7 @@ local freebsd_utils = {
         "riscv64:riscv64",
         "powerpc64le:powerpc64le"
     },
-
+    zfs_poolname = "tank",
     _version = "0.1.0",
     _name = "freebsd_utils",
     _description = "freebsd utils module",
@@ -111,12 +111,8 @@ function freebsd_utils.get_fstab_file(filesystem)
     local fs = filesystem or "ufs"
 --# Device        Mountpoint      FStype  Options Dump    Pass#
     local fstab_table = {
-        ufs = [[
-/dev/ufs/root   /               ufs     rw      1       1
-]],
-        zfs = [[
-/zroot/ROOT/default   /               zfs     rw      1       1
-]]
+        ufs = "/dev/ufs/root / ufs rw 1 1",
+        zfs = string.format("%s / zfs rw 1 1", freebsd_utils.zfs_poolname)
     }
     return fstab_table[fs]
 end
@@ -185,8 +181,8 @@ function freebsd_utils.get_fs_recipe(fs_type, fs_file, dir1, dir2)
     local cmd = ""
     if fs_type == "zfs" then
         local size = "200m"
-        local poolname = "tank"
-        local bootfs = "tank"
+        local poolname = freebsd_utils.zfs_poolname
+        local bootfs = freebsd_utils.zfs_poolname
         local rootpath = "/"
         cmd = string.format("makefs -t zfs -s %s -o poolname=%s -o bootfs=%s -o rootpath=%s %s %s %s",size, poolname, bootfs, rootpath, fs_file, dir1, dir2)
         print(cmd)
@@ -202,7 +198,11 @@ function freebsd_utils.get_img_command(esp, fs_type, fs_file, img, bi)
     --     return "mkimg -s gpt -p efi:="..esp.." -p freebsd-ufs:="..fs.." -o "..img
     -- end
     local cmd = ""
-    cmd = string.format("mkimg -s %s -p efi:=%s -p freebsd-%s:=%s -o %s", bi, esp, fs_type, fs_file, img)
+    if bi == "mbr" then
+        cmd = string.format("mkimg -s %s -p efi:=%s -p freebsd:=%s -o %s", bi, esp, fs_file, img)
+    else
+        cmd = string.format("mkimg -s %s -p efi:=%s -p freebsd-%s:=%s -o %s", bi, esp, fs_type, fs_file, img)
+    end
     return cmd
 end
 -- returns the qemu script for the m, ma
