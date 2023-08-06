@@ -176,17 +176,17 @@ function freebsd_utils.get_esp_recipe(esp, src)
     -- -s 100m : size of fs to be 100MB
     return "makefs -t msdos -o fat_type=32 -o sectors_per_cluster=1 -o volume_label=EFISYS -s 100m "..esp.." "..src
 end
-function freebsd_utils.get_fs_recipe(fs, dir1, dir2)
+function freebsd_utils.get_fs_recipe(fs_type, fs_file, dir1, dir2)
     -- -t ffs : fast file system
     -- -B little : little_endian format
     -- -s 200m : size of fs to be created 200MB
     -- -o label=root : specifies the label as root
     -- copies over content of the dir1, dir2 into the fs indicated
     local cmd = ""
-    if fs == "zfs" then
-        cmd = "makefs -t zfs -B little -s 200m -o poolname=tank rootpath=/ "..fs.." "..dir1.." "..dir2
+    if fs_type == "zfs" then
+        cmd = "makefs -t zfs -B little -s 200m -o poolname=tank rootpath=/ "..fs_file.." "..dir1.." "..dir2
     else
-        cmd = "makefs -t ffs -B little -s 200m -o label=root "..fs.." "..dir1.." "..dir2
+        cmd = "makefs -t ffs -B little -s 200m -o label=root "..fs_file.." "..dir1.." "..dir2
     end
     return cmd
 end
