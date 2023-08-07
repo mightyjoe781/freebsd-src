@@ -126,7 +126,7 @@ local function update_freebsd_img_cache(machine, machine_arch, flavor, version)
     -- check if image exists in cache
     local machine_combo = build.get_machine_combo(machine, machine_arch)
     local file = get_img_filename(machine_combo, flavor, version)
-    local img_url = get_img_url(machine, machine_arch, file, version)
+    local img_url = get_img_url(build.URLBASE, machine, machine_arch, version)
     update_freebsd_img(file, img_url)
 end
 

@@ -59,9 +59,9 @@ function freebsd_utils.find_flavor(arch)
     local flavor = "bootonly.iso"
 
     -- for arm64, we have GENERICSD images only
-    if m == "arm64" then
-        flavor = "GENERICSD"
-    end
+    -- if m == "arm64" then
+    --     flavor = "GENERICSD.img"
+    -- end
     return flavor
 end
 
@@ -76,7 +76,7 @@ function freebsd_utils.get_img_url(urlbase, m, ma, version)
     local machine_combo = freebsd_utils.get_machine_combo(m, ma)
     local flavor = freebsd_utils.find_flavor(m..":"..ma)
     local img_filename = freebsd_utils.get_img_filename(machine_combo, flavor, version)
-    local url = urlbase.."/"..m.."/"..ma.."ISO-IMAGES/"..version.."/"..img_filename..".xz"
+    local url = urlbase.."/"..m.."/"..ma.."/ISO-IMAGES/"..version.."/"..img_filename..".xz"
     return url
 end
 
