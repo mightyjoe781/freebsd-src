@@ -244,6 +244,8 @@ if not configs then
     logger.error("Error while parsing config file: "..args.configfile)
     logger.error(err)
     os.exit(1)
+else
+    logger.info("Parsed %d configs.",#configs)
 end
 
 --------------------------------------------------------------------------------

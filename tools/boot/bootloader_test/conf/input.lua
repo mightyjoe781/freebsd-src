@@ -28,6 +28,6 @@ return {
     },
     recipe_2 = {
         arch  = "arm64",
-        regex_combination = {"ufs-gpt-geli","*-gpt-geli","*-*-geli"},
+        regex_combination = {"*-*-none"},
     }
 }
