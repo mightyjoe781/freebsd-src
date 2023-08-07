@@ -207,7 +207,7 @@ local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, r
         logger.debug("No overrides found for "..machine_combo)
         logger.debug("Using default kernel")
         -- copy kernel from image
-        utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." boot/kernel/kernel boot/kernel/acl_nfs4.ko boot/kernel/cryptodev.ko boot/kernel/zfs.ko boot/kernel/geom_eli.ko boot/device.hints")
+        utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." boot/kernel/kernel boot/kernel/acl_nfs4.ko boot/kernel/cryptodev.ko boot/kernel/zfs.ko boot/kernel/geom_eli.ko boot/device.hints || true")
     end
 
     -- setup some common settings for serial console
