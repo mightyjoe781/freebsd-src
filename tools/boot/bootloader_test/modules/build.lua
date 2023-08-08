@@ -308,21 +308,22 @@ end
 --------------------------------------------------------------------------------
 --                                make_freebsd_scripts
 --------------------------------------------------------------------------------
-local function make_freebsd_scripts(machine, machine_arch)
+local function make_freebsd_scripts(m, ma, fs, bi, enc)
 
-    local machine_combo = build.get_machine_combo(machine, machine_arch)
-    -- TODO (Externalisation Required): understand how this works
-    local bios_code = build.BIOS_DIR.."/edk2-"..machine_combo.."-code.fd"
-    local bios_vars = build.BIOS_DIR.."/edk2-"..machine_combo.."-vars.fd"
+    local mc = build.get_machine_combo(m, ma)
 
-    if machine_arch == "amd64" then
+    -- TODO: (Externalisation Required): understand how this works
+    local bios_code = build.BIOS_DIR.."/edk2-"..mc.."-code.fd"
+    local bios_vars = build.BIOS_DIR.."/edk2-"..mc.."-vars.fd"
+
+    if ma == "amd64" then
       -- if bios code other than /usr/local/share/qemu/edk2-x86_64-code.fd
       -- then copy over to bios_code
       if bios_code ~= "/usr/local/share/qemu/edk2-x86_64-code.fd" then
         utils.execute("cp /usr/local/share/qemu/edk2-x86_64-code.fd "..bios_code) -- copy over vars file too
         utils.execute("cp /usr/local/share/qemu/edk2-i386-vars.fd "..bios_vars)
       end
-    elseif machine_arch == "aarch64" then
+    elseif ma == "aarch64" then
       -- if bios code other than /usr/local/share/qemu/edk2-aarch64-code.fd
       -- then copy over to bios_code
       if bios_code ~= "/usr/local/share/qemu/edk2-aarch64-code.fd" then
@@ -332,39 +333,14 @@ local function make_freebsd_scripts(machine, machine_arch)
           utils.execute("dd if=/usr/local/share/qemu/edk2-aarch64-code.fd of="..bios_code.." conv=notrunc")
       end
     end
-    -- make a script to run qemu
-    local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".img"
-    local script = build.SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
+    local img = build.IMAGE_DIR.."/"..mc.."/freebsd-"..mc..".img" --this should be util function
+    -- gotta rename this thing for each architecture
+    local script = build.SCRIPT_DIR.."/"..mc.."/freebsd-test.sh"
+    utils.execute("mkdir -p "..build.SCRIPT_DIR.."/"..mc)
 
-    -- make directory
-    utils.execute("mkdir -p "..build.SCRIPT_DIR.."/"..machine_combo)
-
-    -- set script file
-    if machine_arch == "amd64" then
-      local script_file = string.format([[%s -nographic -m 512M \
-      -drive file=%s,if=none,id=drive0,cache=writeback,format=raw \
-      -device virtio-blk,drive=drive0,bootindex=0 \
-      -drive file=%s,format=raw,if=pflash \
-      -monitor telnet::4444,server,nowait \
-      -serial stdio $*]],
-      QEMU_BIN, img, bios_code, bios_vars)
-
-      -- save this script
-      utils.write_data_to_file(script, script_file)
-    elseif machine_arch == "aarch64" then
-    --   local raw = build.IMAGE_DIR.."/"..machine_combo.."/nvme-test-empty.raw"
-        -- make a raw file
-      local script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
-      -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
-      -device virtio-blk,drive=drive0,bootindex=0 \
-      -drive file=%s,format=raw,if=pflash \
-      -monitor telnet::4444,server,nowait \
-      -serial stdio $*]],
-      QEMU_BIN, img, bios_code, bios_vars)
-
-      -- save this script
-      utils.write_data_to_file(script, script_file)
-    end
+    local raw_disk = build.IMAGE_DIR.."/"..mc.."/nvme-test-empty.raw"
+    local qemu_script = freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw_disk)
+    utils.write_data_to_file(script, qemu_script)
 end
 
 ----------------------------------------------------------------------------
@@ -451,8 +427,8 @@ function build.build_freebsd_bootloader_tree(config)
     -- make a test tree for testing
     make_freebsd_test_trees(machine, machine_arch)
     make_freebsd_esps(machine, machine_arch)
-    make_freebsd_images(machine, machine_arch, filesystem,interface)
-    make_freebsd_scripts(machine, machine_arch)
+    make_freebsd_images(machine, machine_arch, filesystem, interface)
+    make_freebsd_scripts(machine, machine_arch, filesystem, interface, encryption)
     -- if all goes well, return 0, nil
     return 0, nil
 end

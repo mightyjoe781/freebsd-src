@@ -1,5 +1,7 @@
 #!/usr/libexec/flua
 
+local logger = require("logger")
+
 local freebsd_utils = {
     -- list of arch and machine arch combinations : machine:machine_arch
     arch_list = {
@@ -206,10 +208,9 @@ function freebsd_utils.get_img_command(esp, fs_type, fs_file, img, bi)
     return cmd
 end
 -- returns the qemu script for the m, ma
-function freebsd_utils.get_qemu_script(m, ma, img, bios_code, bios_vars, raw_disk)
-    local qemu_bin = "/usr/local/bin/qemu-system-x86_64"
-    local mc = freebsd_utils.get_machine_combo(m, ma)
+function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw_disk)
 
+    local qemu_bin = "/usr/local/bin/qemu-system-x86_64"
     local script_file = ""
     -- set script file
     if ma == "amd64" then
@@ -222,7 +223,8 @@ function freebsd_utils.get_qemu_script(m, ma, img, bios_code, bios_vars, raw_dis
       qemu_bin, img, bios_code, bios_vars)
 
     elseif ma == "aarch64" then
-      local raw = build.IMAGE_DIR.."/"..mc.."/nvme-test-empty.raw"
+      local raw = raw_disk
+
         -- make a raw file
       script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
       -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
@@ -236,9 +238,8 @@ function freebsd_utils.get_qemu_script(m, ma, img, bios_code, bios_vars, raw_dis
       qemu_bin, img, bios_code, bios_vars, raw)
 
     end
-
+    logger.debug("QEMU script: "..script_file)
     return script_file
-    
 end
 
 return freebsd_utils
