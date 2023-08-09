@@ -1,7 +1,5 @@
 #!/usr/libexec/flua
 
-local logger = require("logger")
-
 local freebsd_utils = {
     -- list of arch and machine arch combinations : machine:machine_arch
     arch_list = {
@@ -207,11 +205,26 @@ function freebsd_utils.get_img_command(esp, fs_type, fs_file, img, bi)
     end
     return cmd
 end
+
+function freebsd_utils.get_qemu_bin(ma)
+    local qemu_bin_map = {
+        amd64 = "/usr/local/bin/qemu-system-x86_64",
+        i386 = "/usr/local/bin/qemu-system-i386",
+        armv7 = "/usr/local/bin/qemu-system-arm",
+        aarch64 = "/usr/local/bin/qemu-system-aarch64",
+        powerpc = "/usr/local/bin/qemu-system-ppc",
+        powerpc64 = "/usr/local/bin/qemu-system-ppc64",
+        riscv64 = "/usr/local/bin/qemu-system-riscv64",
+        powerpc64le = "/usr/local/bin/qemu-system-ppc64le"
+    }
+    return qemu_bin_map[ma]
+end
+
 -- returns the qemu script for the m, ma
 function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw_disk)
 
-    local qemu_bin = "/usr/local/bin/qemu-system-x86_64"
     local script_file = ""
+    local qemu_bin = freebsd_utils.get_qemu_bin(ma)
     -- set script file
     if ma == "amd64" then
       script_file = string.format([[%s -nographic -m 512M \
@@ -236,9 +249,7 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw
       -monitor telnet::4444,server,nowait \
       -serial stdio $*]],
       qemu_bin, img, bios_code, bios_vars, raw)
-
     end
-    logger.debug("QEMU script: "..script_file)
     return script_file
 end
 
