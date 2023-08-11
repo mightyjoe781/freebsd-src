@@ -175,7 +175,7 @@ end
 function parser.fix_config(config)
     -- fix the config
     -- fix if config passes ':' in the architecture
-    if freebsd_utils.is_arch_string(config.architecture) then
+    if freebsd_utils.is_arch_string_valid(config.architecture) then
         local m, ma = freebsd_utils.get_machine_and_machine_arch(config.architecture)
         config.machine = config.machine or m
         config.machine_arch = config.machine_arch or ma

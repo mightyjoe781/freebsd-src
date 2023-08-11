@@ -26,7 +26,7 @@ function freebsd_utils.get_machine_and_machine_arch(arch)
 end
 
 -- returns if the arch string is valid
-function freebsd_utils.is_arch_string(arch)
+function freebsd_utils.is_arch_string_valid(arch)
     local m, ma = string.match(arch, "(%w+):(%w+)")
     if m and ma then
         return true
