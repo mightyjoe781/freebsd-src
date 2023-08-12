@@ -74,7 +74,7 @@ function freebsd_utils.parse_config(config)
     local m = config.machine
     local ma = config.machine_arch
     local fs = config.filesystem
-    local bi = config.boot_interface
+    local bi = config.interface
     local enc = config.encrypted
     local identifier = freebsd_utils.get_identifier(m, ma, fs, bi, enc)
     return m, ma, fs, bi, enc, identifier
@@ -206,7 +206,7 @@ function freebsd_utils.get_fs_recipe(fs_type, fs_file, dir1, dir2)
     end
     return cmd
 end
-function freebsd_utils.get_img_command(esp, fs_type, fs_file, img, bi)
+function freebsd_utils.get_img_creation_cmd(esp, fs_type, fs_file, img, bi)
     -- if fs == "zfs" then
     --     return "mkimg -s gpt -p efi:="..esp.." -p freebsd-zfs:="..fs.." -o "..img
     -- elseif fs == "ufs" then

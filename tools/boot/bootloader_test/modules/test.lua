@@ -71,7 +71,7 @@ function test.test_bootloader(config)
     end
     logger.info("Bootloader config is valid")
 
-    local m, ma, _, _, _, id = freebsd_utils.compact_parse_config(config)
+    local m, ma, _, _, _, id = freebsd_utils.parse_config(config)
     local mc = freebsd_utils.get_machine_combo(m, ma)
     local script = SCRIPT_DIR.."/"..mc.."/freebsd-"..id..".sh"
 
