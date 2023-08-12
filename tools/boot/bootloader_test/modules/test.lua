@@ -44,8 +44,9 @@ function test.validate_bootloader_config(config)
     end
 
     -- check if the script exists
-    local machine_combo = freebsd_utils.get_machine_combo(config.machine, config.machine_arch)
-    local script = SCRIPT_DIR.."/"..machine_combo.."/freebsd-test.sh"
+    local m, ma, _, _, _, id = freebsd_utils.parse_config(config)
+    local mc = freebsd_utils.get_machine_combo(m, ma)
+    local script = SCRIPT_DIR.."/"..mc.."/freebsd-"..id..".sh"
     if not utils.file_exists(script) then
         return false, "Script "..script.." does not exist"
     end
