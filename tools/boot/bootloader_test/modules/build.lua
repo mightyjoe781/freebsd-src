@@ -307,8 +307,9 @@ end
 --------------------------------------------------------------------------------
 --                                make_freebsd_scripts
 --------------------------------------------------------------------------------
-local function make_freebsd_scripts(m, ma, fs, bi, enc)
+local function make_freebsd_scripts(config)
 
+    local m, ma, fs, bi, enc, _ = freebsd_utils.parse_config(config)
     local mc = build.get_machine_combo(m, ma)
 
     -- TODO: (Externalisation Required): understand how this works
@@ -427,7 +428,7 @@ function build.build_freebsd_bootloader_tree(config)
     make_freebsd_test_trees(machine, machine_arch)
     make_freebsd_esps(machine, machine_arch)
     make_freebsd_images(config)
-    make_freebsd_scripts(machine, machine_arch, filesystem, interface, encryption)
+    make_freebsd_scripts(config)
     -- if all goes well, return 0, nil
     return 0, nil
 end
