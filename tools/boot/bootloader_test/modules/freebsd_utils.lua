@@ -65,6 +65,21 @@ function freebsd_utils.find_flavor(arch)
     return flavor
 end
 
+-- returns unique string name for every config object
+function freebsd_utils.get_identifier(m, ma, fs, bi, enc)
+    return string.format("%s-%s-%s-%s-%s", m, ma, fs, bi, enc)
+end
+
+function freebsd_utils.parse_config(config)
+    local m = config.machine
+    local ma = config.machine_arch
+    local fs = config.filesystem
+    local bi = config.boot_interface
+    local enc = config.encrypted
+    local identifier = freebsd_utils.get_identifier(m, ma, fs, bi, enc)
+    return m, ma, fs, bi, enc, identifier
+end
+
 -- returns the image filename
 function freebsd_utils.get_img_filename(machine_combo, flavor, version)
     local filename ="FreeBSD-"..version.."-RELEASE-"..machine_combo.."-"..flavor

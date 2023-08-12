@@ -270,33 +270,32 @@ end
 --                                make_freebsd_images
 --------------------------------------------------------------------------------
 build.get_fstab = freebsd_utils.get_fstab_file
-local function make_freebsd_images(m, ma, fs, bi)
+local function make_freebsd_images(config)
+    local m, ma, fs, bi, _, identifier = freebsd_utils.parse_config(config)
+    local mc = freebsd_utils.get_machine_combo(m, ma)
 
-    local machine_combo = build.get_machine_combo(m, ma)
-    local fs_type = fs or "ufs"
-
-    local src = build.TREE_DIR.."/"..machine_combo.."/freebsd-esp"
-    local dir = build.TREE_DIR.."/"..machine_combo.."/freebsd"
-    local dir2 = build.TREE_DIR.."/"..machine_combo.."/test-stand"
-    local esp = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".esp"
-    local fs_file = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo.."."..fs_type
-    local img = build.IMAGE_DIR.."/"..machine_combo.."/freebsd-"..machine_combo..".img"
+    local src = build.TREE_DIR.."/"..mc.."/freebsd-esp"
+    local dir = build.TREE_DIR.."/"..mc.."/freebsd"
+    local dir2 = build.TREE_DIR.."/"..mc.."/test-stand"
+    local esp = build.IMAGE_DIR.."/"..mc.."/freebsd-"..mc..".esp"
+    local fs_file = build.IMAGE_DIR.."/"..mc.."/freebsd-"..mc.."."..fs
+    local img = build.IMAGE_DIR.."/"..mc.."/freebsd-"..identifier..".img"
 
     -- make directories
-    utils.execute("mkdir -p "..build.IMAGE_DIR.."/"..machine_combo)
+    utils.execute("mkdir -p "..build.IMAGE_DIR.."/"..mc)
     utils.execute("mkdir -p "..dir2.."/etc")
 
     -- set fstab file
-    local fstab = build.get_fstab(fs_type)
+    local fstab = build.get_fstab(fs)
     -- save this fstab file
     utils.write_data_to_file(dir2.."/etc/fstab", fstab)
 
-    logger.debug("Creating image for "..machine_combo)
+    logger.debug("Creating image for "..mc)
     -- TODO(Externalisation Required): understand bash code for SHELL
     local fs_commands = {
         freebsd_utils.get_esp_recipe(esp,src),
-        freebsd_utils.get_fs_recipe(fs_type, fs_file,dir,dir2),
-        freebsd_utils.get_img_command(esp,fs_type,fs_file,img, bi)
+        freebsd_utils.get_fs_recipe(fs, fs_file,dir,dir2),
+        freebsd_utils.get_img_command(esp,fs,fs_file,img, bi)
     }
 
     for _, cmd in ipairs(fs_commands) do
@@ -333,9 +332,9 @@ local function make_freebsd_scripts(m, ma, fs, bi, enc)
           utils.execute("dd if=/usr/local/share/qemu/edk2-aarch64-code.fd of="..bios_code.." conv=notrunc")
       end
     end
-    local img = build.IMAGE_DIR.."/"..mc.."/freebsd-"..mc..".img" --this should be util function
-    -- gotta rename this thing for each architecture
-    local script = build.SCRIPT_DIR.."/"..mc.."/freebsd-test.sh"
+    local identifier = freebsd_utils.get_identifier(m, ma, fs, bi, enc)
+    local img = build.IMAGE_DIR.."/"..mc.."/freebsd-"..identifier..".img"
+    local script = build.SCRIPT_DIR.."/"..mc.."/freebsd-"..identifier..".sh"
     utils.execute("mkdir -p "..build.SCRIPT_DIR.."/"..mc)
 
     local raw_disk = build.IMAGE_DIR.."/"..mc.."/nvme-test-empty.raw"
@@ -427,7 +426,7 @@ function build.build_freebsd_bootloader_tree(config)
     -- make a test tree for testing
     make_freebsd_test_trees(machine, machine_arch)
     make_freebsd_esps(machine, machine_arch)
-    make_freebsd_images(machine, machine_arch, filesystem, interface)
+    make_freebsd_images(config)
     make_freebsd_scripts(machine, machine_arch, filesystem, interface, encryption)
     -- if all goes well, return 0, nil
     return 0, nil
