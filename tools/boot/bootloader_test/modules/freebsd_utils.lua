@@ -67,7 +67,8 @@ end
 
 -- returns unique string name for every config object
 function freebsd_utils.get_identifier(m, ma, fs, bi, enc)
-    return string.format("%s-%s-%s-%s-%s", m, ma, fs, bi, enc)
+    local mc = freebsd_utils.get_machine_combo(m, ma)
+    return string.format("%s-%s-%s-%s", mc, fs, bi, enc)
 end
 
 function freebsd_utils.parse_config(config)

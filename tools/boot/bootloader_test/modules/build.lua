@@ -118,7 +118,7 @@ local function update_freebsd_img(file, img_url)
     -- else we download the image
     utils.fetch_file(img_url, filepath)
     -- extract that image
-    utils.execute("xz -d "..filepath)
+    utils.execute("xz -dk "..filepath)
 end
 
 -- function updates freebsd_img_cache
