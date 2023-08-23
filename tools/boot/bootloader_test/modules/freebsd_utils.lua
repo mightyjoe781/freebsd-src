@@ -9,7 +9,7 @@ local freebsd_utils = {
         "arm:armv7",
         "powerpc:powerpc",
         "powerpc64:powerpc64",
-        "riscv64:riscv64",
+        "riscv:riscv64",
         "powerpc64le:powerpc64le"
     },
     zfs_poolname = "tank",
@@ -242,7 +242,7 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw
     local script_file = ""
     local qemu_bin = freebsd_utils.get_qemu_bin(ma)
     -- set script file
-    if ma == "amd64" then
+    if ma == "amd64" or ma == "riscv64" then
       script_file = string.format([[%s -nographic -m 512M \
       -drive file=%s,if=none,id=drive0,cache=writeback,format=raw \
       -device virtio-blk,drive=drive0,bootindex=0 \

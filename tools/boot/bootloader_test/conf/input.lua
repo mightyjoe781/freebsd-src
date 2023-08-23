@@ -29,5 +29,9 @@ return {
     recipe_2 = {
         arch  = "arm64",
         regex_combination = {"*-*-none"},
+    },
+    recipe_3 = {
+        arch  = "riscv",
+        regex_combination = {"*-*-none"},
     }
 }
