@@ -252,6 +252,8 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
       qemu_bin, img, bios_code, bios_vars)
     elseif ma == "aarch64" then
         -- make a raw file
+        --[[ warner's old recipe from https://wiki.freebsd.org/arm64/QEMU
+        -- NOTE : uncomment this carefully
       script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
       -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
       -device virtio-blk,drive=drive0,bootindex=0 \
@@ -260,8 +262,18 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
       -drive file=%s,if=none,id=drive1,cache=writeback,format=raw \
       -device nvme,serial=deadbeef,drive=drive1 \
       -monitor telnet::4444,server,nowait \
+      -serial stdio $*]]--[[
+      ,qemu_bin, img, bios_code, bios_vars)
+      ]]
+
+      -- lwh's recipe from https://wiki.freebsd.org/arm64/QEMU
+      script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
+      -drive if=none,file=%s,id=hd0 \
+      -bios %s \
+      -device virtio-blk-device,drive=hd0 \
+      -monitor telnet::4444,server,nowait \
       -serial stdio $*]],
-      qemu_bin, img, bios_code, bios_vars)
+      qemu_bin, img, bios_code)
     elseif ma == "riscv64" then
         -- https://wiki.freebsd.org/riscv/QEMU
         script_file = string.format([[%s -machine virt -m 2048M -smp 2 -nographic \
