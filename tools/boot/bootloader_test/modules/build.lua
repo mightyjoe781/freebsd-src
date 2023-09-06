@@ -88,7 +88,7 @@ local function validate_config(config)
     local err_code = 0
 
     -- check if required keys are present in config or not
-    local required_keys = {"architecture", "filesystem", "interface", "encryption", "linuxboot_edk2", "machine", "machine_arch"}
+    local required_keys = {"architecture", "filesystem", "interface", "encryption", "linuxboot_edk2", "machine", "mchine_arch"}
     for _, key in ipairs(required_keys) do
         if config[key] == nil then
             err_code = 1
