@@ -42,8 +42,6 @@
  * roots in a similar driver written by Phil Cockcroft (formerly) at
  * UCL. This driver is based much more on read/write/poll mode of
  * operation though.
- *
- * $FreeBSD$
  */
 
 #include "opt_inet.h"
@@ -1341,7 +1339,7 @@ tunifioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		dummy = ifmr->ifm_count;
 		ifmr->ifm_count = 1;
 		ifmr->ifm_status = IFM_AVALID;
-		ifmr->ifm_active = IFM_ETHER;
+		ifmr->ifm_active = IFM_ETHER | IFM_FDX | IFM_1000_T;
 		if (tp->tun_flags & TUN_OPEN)
 			ifmr->ifm_status |= IFM_ACTIVE;
 		ifmr->ifm_current = ifmr->ifm_active;

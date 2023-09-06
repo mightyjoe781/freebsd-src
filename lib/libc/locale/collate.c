@@ -37,8 +37,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include "namespace.h"
 
 #include <sys/types.h>
@@ -159,7 +157,7 @@ __collate_load_tables_l(const char *encoding, struct xlocale_collate *table)
 	}
 	if (sbuf.st_size < (COLLATE_FMT_VERSION_LEN +
 			    XLOCALE_DEF_VERSION_LEN +
-			    sizeof (info))) {
+			    sizeof (*info))) {
 		(void) _close(fd);
 		errno = EINVAL;
 		return (_LDP_ERROR);

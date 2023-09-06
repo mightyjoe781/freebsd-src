@@ -228,8 +228,10 @@ extensible_dataset
 filesystem_limits
 hole_birth
 large_blocks
+livelist
 lz4_compress
 spacemap_histogram
+zpool_checkpoint
 
 .No example# Nm zpool Cm create Fl o Sy compatibility Ns = Ns Ar grub2 Ar bootpool Ar vdev
 .Ed
@@ -945,6 +947,18 @@ once all filesystems that have ever had their
 property set to
 .Sy zstd
 are destroyed.
+.
+.feature com.delphix redaction_list_spill no redaction_bookmarks
+This feature enables the redaction list created by zfs redact to store
+many more entries.
+It becomes
+.Sy active
+when a redaction list is created with more than 36 entries,
+and returns to being
+.Sy enabled
+when no long redaction lists remain in the pool.
+For more information about redacted sends, see
+.Xr zfs-send 8 .
 .El
 .
 .Sh SEE ALSO

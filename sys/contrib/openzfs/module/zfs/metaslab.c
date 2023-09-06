@@ -40,8 +40,6 @@
 #include <sys/zap.h>
 #include <sys/btree.h>
 
-#define	WITH_DF_BLOCK_ALLOCATOR
-
 #define	GANG_ALLOCATION(flags) \
 	((flags) & (METASLAB_GANG_CHILD | METASLAB_GANG_HEADER))
 
@@ -57,6 +55,11 @@ static uint64_t metaslab_aliquot = 1024 * 1024;
  * For testing, make some blocks above a certain size be gang blocks.
  */
 uint64_t metaslab_force_ganging = SPA_MAXBLOCKSIZE + 1;
+
+/*
+ * Of blocks of size >= metaslab_force_ganging, actually gang them this often.
+ */
+uint_t metaslab_force_ganging_pct = 3;
 
 /*
  * In pools where the log space map feature is not enabled we touch
@@ -1287,7 +1290,7 @@ metaslab_group_allocatable(metaslab_group_t *mg, metaslab_group_t *rotor,
 
 		/*
 		 * If this metaslab group is below its qmax or it's
-		 * the only allocatable metasable group, then attempt
+		 * the only allocatable metaslab group, then attempt
 		 * to allocate from it.
 		 */
 		if (qdepth < qmax || mc->mc_alloc_groups == 1)
@@ -1342,6 +1345,7 @@ metaslab_group_allocatable(metaslab_group_t *mg, metaslab_group_t *rotor,
  * Comparison function for the private size-ordered tree using 32-bit
  * ranges. Tree is sorted by size, larger sizes at the end of the tree.
  */
+__attribute__((always_inline)) inline
 static int
 metaslab_rangesize32_compare(const void *x1, const void *x2)
 {
@@ -1352,16 +1356,15 @@ metaslab_rangesize32_compare(const void *x1, const void *x2)
 	uint64_t rs_size2 = r2->rs_end - r2->rs_start;
 
 	int cmp = TREE_CMP(rs_size1, rs_size2);
-	if (likely(cmp))
-		return (cmp);
 
-	return (TREE_CMP(r1->rs_start, r2->rs_start));
+	return (cmp + !cmp * TREE_CMP(r1->rs_start, r2->rs_start));
 }
 
 /*
  * Comparison function for the private size-ordered tree using 64-bit
  * ranges. Tree is sorted by size, larger sizes at the end of the tree.
  */
+__attribute__((always_inline)) inline
 static int
 metaslab_rangesize64_compare(const void *x1, const void *x2)
 {
@@ -1372,11 +1375,10 @@ metaslab_rangesize64_compare(const void *x1, const void *x2)
 	uint64_t rs_size2 = r2->rs_end - r2->rs_start;
 
 	int cmp = TREE_CMP(rs_size1, rs_size2);
-	if (likely(cmp))
-		return (cmp);
 
-	return (TREE_CMP(r1->rs_start, r2->rs_start));
+	return (cmp + !cmp * TREE_CMP(r1->rs_start, r2->rs_start));
 }
+
 typedef struct metaslab_rt_arg {
 	zfs_btree_t *mra_bt;
 	uint32_t mra_floor_shift;
@@ -1412,6 +1414,13 @@ metaslab_size_tree_full_load(range_tree_t *rt)
 	range_tree_walk(rt, metaslab_size_sorted_add, &arg);
 }
 
+
+ZFS_BTREE_FIND_IN_BUF_FUNC(metaslab_rt_find_rangesize32_in_buf,
+    range_seg32_t, metaslab_rangesize32_compare)
+
+ZFS_BTREE_FIND_IN_BUF_FUNC(metaslab_rt_find_rangesize64_in_buf,
+    range_seg64_t, metaslab_rangesize64_compare)
+
 /*
  * Create any block allocator specific components. The current allocators
  * rely on using both a size-ordered range_tree_t and an array of uint64_t's.
@@ -1424,19 +1433,22 @@ metaslab_rt_create(range_tree_t *rt, void *arg)
 
 	size_t size;
 	int (*compare) (const void *, const void *);
+	bt_find_in_buf_f bt_find;
 	switch (rt->rt_type) {
 	case RANGE_SEG32:
 		size = sizeof (range_seg32_t);
 		compare = metaslab_rangesize32_compare;
+		bt_find = metaslab_rt_find_rangesize32_in_buf;
 		break;
 	case RANGE_SEG64:
 		size = sizeof (range_seg64_t);
 		compare = metaslab_rangesize64_compare;
+		bt_find = metaslab_rt_find_rangesize64_in_buf;
 		break;
 	default:
 		panic("Invalid range seg type %d", rt->rt_type);
 	}
-	zfs_btree_create(size_tree, compare, size);
+	zfs_btree_create(size_tree, compare, bt_find, size);
 	mrap->mra_floor_shift = metaslab_by_size_min_shift;
 }
 
@@ -1608,9 +1620,6 @@ metaslab_block_find(zfs_btree_t *t, range_tree_t *rt, uint64_t start,
 	return (rs);
 }
 
-#if defined(WITH_DF_BLOCK_ALLOCATOR) || \
-    defined(WITH_CF_BLOCK_ALLOCATOR)
-
 /*
  * This is a helper function that can be used by the allocator to find a
  * suitable block to allocate. This will search the specified B-tree looking
@@ -1645,9 +1654,74 @@ metaslab_block_picker(range_tree_t *rt, uint64_t *cursor, uint64_t size,
 	*cursor = 0;
 	return (-1ULL);
 }
-#endif /* WITH_DF/CF_BLOCK_ALLOCATOR */
 
-#if defined(WITH_DF_BLOCK_ALLOCATOR)
+static uint64_t metaslab_df_alloc(metaslab_t *msp, uint64_t size);
+static uint64_t metaslab_cf_alloc(metaslab_t *msp, uint64_t size);
+static uint64_t metaslab_ndf_alloc(metaslab_t *msp, uint64_t size);
+metaslab_ops_t *metaslab_allocator(spa_t *spa);
+
+static metaslab_ops_t metaslab_allocators[] = {
+	{ "dynamic", metaslab_df_alloc },
+	{ "cursor", metaslab_cf_alloc },
+	{ "new-dynamic", metaslab_ndf_alloc },
+};
+
+static int
+spa_find_allocator_byname(const char *val)
+{
+	int a = ARRAY_SIZE(metaslab_allocators) - 1;
+	if (strcmp("new-dynamic", val) == 0)
+		return (-1); /* remove when ndf is working */
+	for (; a >= 0; a--) {
+		if (strcmp(val, metaslab_allocators[a].msop_name) == 0)
+			return (a);
+	}
+	return (-1);
+}
+
+void
+spa_set_allocator(spa_t *spa, const char *allocator)
+{
+	int a = spa_find_allocator_byname(allocator);
+	if (a < 0) a = 0;
+	spa->spa_active_allocator = a;
+	zfs_dbgmsg("spa allocator: %s\n", metaslab_allocators[a].msop_name);
+}
+
+int
+spa_get_allocator(spa_t *spa)
+{
+	return (spa->spa_active_allocator);
+}
+
+#if defined(_KERNEL)
+int
+param_set_active_allocator_common(const char *val)
+{
+	char *p;
+
+	if (val == NULL)
+		return (SET_ERROR(EINVAL));
+
+	if ((p = strchr(val, '\n')) != NULL)
+		*p = '\0';
+
+	int a = spa_find_allocator_byname(val);
+	if (a < 0)
+		return (SET_ERROR(EINVAL));
+
+	zfs_active_allocator = metaslab_allocators[a].msop_name;
+	return (0);
+}
+#endif
+
+metaslab_ops_t *
+metaslab_allocator(spa_t *spa)
+{
+	int allocator = spa_get_allocator(spa);
+	return (&metaslab_allocators[allocator]);
+}
+
 /*
  * ==========================================================================
  * Dynamic Fit (df) block allocator
@@ -1722,12 +1796,6 @@ metaslab_df_alloc(metaslab_t *msp, uint64_t size)
 	return (offset);
 }
 
-const metaslab_ops_t zfs_metaslab_ops = {
-	metaslab_df_alloc
-};
-#endif /* WITH_DF_BLOCK_ALLOCATOR */
-
-#if defined(WITH_CF_BLOCK_ALLOCATOR)
 /*
  * ==========================================================================
  * Cursor fit block allocator -
@@ -1770,12 +1838,6 @@ metaslab_cf_alloc(metaslab_t *msp, uint64_t size)
 	return (offset);
 }
 
-const metaslab_ops_t zfs_metaslab_ops = {
-	metaslab_cf_alloc
-};
-#endif /* WITH_CF_BLOCK_ALLOCATOR */
-
-#if defined(WITH_NDF_BLOCK_ALLOCATOR)
 /*
  * ==========================================================================
  * New dynamic fit allocator -
@@ -1831,12 +1893,6 @@ metaslab_ndf_alloc(metaslab_t *msp, uint64_t size)
 	}
 	return (-1ULL);
 }
-
-const metaslab_ops_t zfs_metaslab_ops = {
-	metaslab_ndf_alloc
-};
-#endif /* WITH_NDF_BLOCK_ALLOCATOR */
-
 
 /*
  * ==========================================================================
@@ -5087,7 +5143,7 @@ metaslab_alloc_dva(spa_t *spa, metaslab_class_t *mc, uint64_t psize,
     zio_alloc_list_t *zal, int allocator)
 {
 	metaslab_class_allocator_t *mca = &mc->mc_allocator[allocator];
-	metaslab_group_t *mg, *fast_mg, *rotor;
+	metaslab_group_t *mg, *rotor;
 	vdev_t *vd;
 	boolean_t try_hard = B_FALSE;
 
@@ -5100,7 +5156,9 @@ metaslab_alloc_dva(spa_t *spa, metaslab_class_t *mc, uint64_t psize,
 	 * damage can result in extremely long reconstruction times.  This
 	 * will also test spilling from special to normal.
 	 */
-	if (psize >= metaslab_force_ganging && (random_in_range(100) < 3)) {
+	if (psize >= metaslab_force_ganging &&
+	    metaslab_force_ganging_pct > 0 &&
+	    (random_in_range(100) < MIN(metaslab_force_ganging_pct, 100))) {
 		metaslab_trace_add(zal, NULL, NULL, psize, d, TRACE_FORCE_GANG,
 		    allocator);
 		return (SET_ERROR(ENOSPC));
@@ -5148,15 +5206,6 @@ metaslab_alloc_dva(spa_t *spa, metaslab_class_t *mc, uint64_t psize,
 	} else if (d != 0) {
 		vd = vdev_lookup_top(spa, DVA_GET_VDEV(&dva[d - 1]));
 		mg = vd->vdev_mg->mg_next;
-	} else if (flags & METASLAB_FASTWRITE) {
-		mg = fast_mg = mca->mca_rotor;
-
-		do {
-			if (fast_mg->mg_vd->vdev_pending_fastwrite <
-			    mg->mg_vd->vdev_pending_fastwrite)
-				mg = fast_mg;
-		} while ((fast_mg = fast_mg->mg_next) != mca->mca_rotor);
-
 	} else {
 		ASSERT(mca->mca_rotor != NULL);
 		mg = mca->mca_rotor;
@@ -5281,7 +5330,7 @@ top:
 				mg->mg_bias = 0;
 			}
 
-			if ((flags & METASLAB_FASTWRITE) ||
+			if ((flags & METASLAB_ZIL) ||
 			    atomic_add_64_nv(&mca->mca_aliquot, asize) >=
 			    mg->mg_aliquot + mg->mg_bias) {
 				mca->mca_rotor = mg->mg_next;
@@ -5293,11 +5342,6 @@ top:
 			DVA_SET_GANG(&dva[d],
 			    ((flags & METASLAB_GANG_HEADER) ? 1 : 0));
 			DVA_SET_ASIZE(&dva[d], asize);
-
-			if (flags & METASLAB_FASTWRITE) {
-				atomic_add_64(&vd->vdev_pending_fastwrite,
-				    psize);
-			}
 
 			return (0);
 		}
@@ -5641,8 +5685,7 @@ metaslab_class_throttle_reserve(metaslab_class_t *mc, int slots, int allocator,
 		 * We reserve the slots individually so that we can unreserve
 		 * them individually when an I/O completes.
 		 */
-		for (int d = 0; d < slots; d++)
-			zfs_refcount_add(&mca->mca_alloc_slots, zio);
+		zfs_refcount_add_few(&mca->mca_alloc_slots, slots, zio);
 		zio->io_flags |= ZIO_FLAG_IO_ALLOCATING;
 		return (B_TRUE);
 	}
@@ -5656,8 +5699,7 @@ metaslab_class_throttle_unreserve(metaslab_class_t *mc, int slots,
 	metaslab_class_allocator_t *mca = &mc->mc_allocator[allocator];
 
 	ASSERT(mc->mc_alloc_throttle_enabled);
-	for (int d = 0; d < slots; d++)
-		zfs_refcount_remove(&mca->mca_alloc_slots, zio);
+	zfs_refcount_remove_few(&mca->mca_alloc_slots, slots, zio);
 }
 
 static int
@@ -5936,55 +5978,6 @@ metaslab_claim(spa_t *spa, const blkptr_t *bp, uint64_t txg)
 	return (error);
 }
 
-void
-metaslab_fastwrite_mark(spa_t *spa, const blkptr_t *bp)
-{
-	const dva_t *dva = bp->blk_dva;
-	int ndvas = BP_GET_NDVAS(bp);
-	uint64_t psize = BP_GET_PSIZE(bp);
-	int d;
-	vdev_t *vd;
-
-	ASSERT(!BP_IS_HOLE(bp));
-	ASSERT(!BP_IS_EMBEDDED(bp));
-	ASSERT(psize > 0);
-
-	spa_config_enter(spa, SCL_VDEV, FTAG, RW_READER);
-
-	for (d = 0; d < ndvas; d++) {
-		if ((vd = vdev_lookup_top(spa, DVA_GET_VDEV(&dva[d]))) == NULL)
-			continue;
-		atomic_add_64(&vd->vdev_pending_fastwrite, psize);
-	}
-
-	spa_config_exit(spa, SCL_VDEV, FTAG);
-}
-
-void
-metaslab_fastwrite_unmark(spa_t *spa, const blkptr_t *bp)
-{
-	const dva_t *dva = bp->blk_dva;
-	int ndvas = BP_GET_NDVAS(bp);
-	uint64_t psize = BP_GET_PSIZE(bp);
-	int d;
-	vdev_t *vd;
-
-	ASSERT(!BP_IS_HOLE(bp));
-	ASSERT(!BP_IS_EMBEDDED(bp));
-	ASSERT(psize > 0);
-
-	spa_config_enter(spa, SCL_VDEV, FTAG, RW_READER);
-
-	for (d = 0; d < ndvas; d++) {
-		if ((vd = vdev_lookup_top(spa, DVA_GET_VDEV(&dva[d]))) == NULL)
-			continue;
-		ASSERT3U(vd->vdev_pending_fastwrite, >=, psize);
-		atomic_sub_64(&vd->vdev_pending_fastwrite, psize);
-	}
-
-	spa_config_exit(spa, SCL_VDEV, FTAG);
-}
-
 static void
 metaslab_check_free_impl_cb(uint64_t inner, vdev_t *vd, uint64_t offset,
     uint64_t size, void *arg)
@@ -6259,7 +6252,10 @@ ZFS_MODULE_PARAM(zfs_metaslab, zfs_metaslab_, switch_threshold, INT, ZMOD_RW,
 	"Segment-based metaslab selection maximum buckets before switching");
 
 ZFS_MODULE_PARAM(zfs_metaslab, metaslab_, force_ganging, U64, ZMOD_RW,
-	"Blocks larger than this size are forced to be gang blocks");
+	"Blocks larger than this size are sometimes forced to be gang blocks");
+
+ZFS_MODULE_PARAM(zfs_metaslab, metaslab_, force_ganging_pct, UINT, ZMOD_RW,
+	"Percentage of large blocks that will be forced to be gang blocks");
 
 ZFS_MODULE_PARAM(zfs_metaslab, metaslab_, df_max_search, UINT, ZMOD_RW,
 	"Max distance (bytes) to search forward before using size tree");
@@ -6278,3 +6274,9 @@ ZFS_MODULE_PARAM(zfs_metaslab, zfs_metaslab_, try_hard_before_gang, INT,
 
 ZFS_MODULE_PARAM(zfs_metaslab, zfs_metaslab_, find_max_tries, UINT, ZMOD_RW,
 	"Normally only consider this many of the best metaslabs in each vdev");
+
+/* BEGIN CSTYLED */
+ZFS_MODULE_PARAM_CALL(zfs, zfs_, active_allocator,
+	param_set_active_allocator, param_get_charp, ZMOD_RW,
+	"SPA active allocator");
+/* END CSTYLED */

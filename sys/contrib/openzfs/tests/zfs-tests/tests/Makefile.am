@@ -90,6 +90,7 @@ nobase_dist_datadir_zfs_tests_tests_DATA += \
 	functional/alloc_class/alloc_class.kshlib \
 	functional/atime/atime.cfg \
 	functional/atime/atime_common.kshlib \
+	functional/block_cloning/block_cloning.kshlib \
 	functional/cache/cache.cfg \
 	functional/cache/cache.kshlib \
 	functional/cachefile/cachefile.cfg \
@@ -437,6 +438,19 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/atime/root_atime_on.ksh \
 	functional/atime/root_relatime_on.ksh \
 	functional/atime/setup.ksh \
+	functional/block_cloning/cleanup.ksh \
+	functional/block_cloning/setup.ksh \
+	functional/block_cloning/block_cloning_copyfilerange_cross_dataset.ksh \
+	functional/block_cloning/block_cloning_copyfilerange_fallback.ksh \
+	functional/block_cloning/block_cloning_copyfilerange_fallback_same_txg.ksh \
+	functional/block_cloning/block_cloning_copyfilerange.ksh \
+	functional/block_cloning/block_cloning_copyfilerange_partial.ksh \
+	functional/block_cloning/block_cloning_disabled_copyfilerange.ksh \
+	functional/block_cloning/block_cloning_disabled_ficlone.ksh \
+	functional/block_cloning/block_cloning_disabled_ficlonerange.ksh \
+	functional/block_cloning/block_cloning_ficlone.ksh \
+	functional/block_cloning/block_cloning_ficlonerange.ksh \
+	functional/block_cloning/block_cloning_ficlonerange_partial.ksh \
 	functional/bootfs/bootfs_001_pos.ksh \
 	functional/bootfs/bootfs_002_neg.ksh \
 	functional/bootfs/bootfs_003_pos.ksh \
@@ -572,6 +586,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/cli_root/zdb/zdb_006_pos.ksh \
 	functional/cli_root/zdb/zdb_args_neg.ksh \
 	functional/cli_root/zdb/zdb_args_pos.ksh \
+	functional/cli_root/zdb/zdb_backup.ksh \
 	functional/cli_root/zdb/zdb_block_size_histogram.ksh \
 	functional/cli_root/zdb/zdb_checksum.ksh \
 	functional/cli_root/zdb/zdb_decompress.ksh \
@@ -1142,6 +1157,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/cli_root/zpool_resilver/setup.ksh \
 	functional/cli_root/zpool_resilver/zpool_resilver_bad_args.ksh \
 	functional/cli_root/zpool_resilver/zpool_resilver_restart.ksh \
+	functional/cli_root/zpool_resilver/zpool_resilver_concurrent.ksh \
 	functional/cli_root/zpool_scrub/cleanup.ksh \
 	functional/cli_root/zpool_scrub/setup.ksh \
 	functional/cli_root/zpool_scrub/zpool_scrub_001_neg.ksh \

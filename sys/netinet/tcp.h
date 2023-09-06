@@ -29,7 +29,6 @@
  * SUCH DAMAGE.
  *
  *	@(#)tcp.h	8.1 (Berkeley) 6/10/93
- * $FreeBSD$
  */
 
 #ifndef _NETINET_TCP_H_
@@ -336,6 +335,7 @@ struct tcphdr {
 #define	TCPI_OPT_ECN		0x08
 #define	TCPI_OPT_TOE		0x10
 #define	TCPI_OPT_TFO		0x20
+#define	TCPI_OPT_ACE		0x40
 
 /* Maximum length of log ID. */
 #define TCP_LOG_ID_LEN	64
@@ -427,8 +427,14 @@ struct tcp_info {
 	u_int32_t	tcpi_total_tlp;		/* tail loss probes sent */
 	u_int64_t	tcpi_total_tlp_bytes;	/* tail loss probe bytes sent */
 
+	u_int32_t	tcpi_snd_una;		/* Unacked seqno sent */
+	u_int32_t	tcpi_snd_max;		/* Highest seqno sent */
+	u_int32_t	tcpi_rcv_numsacks;	/* Distinct SACK blks present */
+	u_int32_t	tcpi_rcv_adv;		/* Peer advertised window */
+	u_int32_t	tcpi_dupacks;		/* Consecutive dup ACKs recvd */
+
 	/* Padding to grow without breaking ABI. */
-	u_int32_t	__tcpi_pad[19];		/* Padding. */
+	u_int32_t	__tcpi_pad[14];		/* Padding. */
 };
 
 /*
@@ -499,6 +505,8 @@ struct tcp_log_user {
 #define TCP_HYBRID_PACING_ENABLE	0x0010		/* We are enabling hybrid pacing else disable */
 #define TCP_HYBRID_PACING_S_MSS		0x0020		/* Clent wants us to set the mss overriding gp est in CU */
 #define TCP_HYBRID_PACING_SETMSS	0x1000		/* Internal flag that tellsus we set the mss on this entry */
+#define TCP_HYBRID_PACING_WASSET	0x2000		/* We init to this to know if a hybrid command was issued */
+
 
 struct tcp_hybrid_req {
 	struct tcp_snd_req req;

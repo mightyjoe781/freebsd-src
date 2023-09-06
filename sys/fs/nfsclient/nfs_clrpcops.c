@@ -34,8 +34,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 /*
  * Rpc op calls, generally called from the vnode op calls or through the
  * buffer cache, for NFS v2, 3 and 4.
@@ -2308,7 +2306,7 @@ nfsmout:
  */
 int
 nfsrpc_mknod(vnode_t dvp, char *name, int namelen, struct vattr *vap,
-    u_int32_t rdev, enum vtype vtyp, struct ucred *cred, NFSPROC_T *p,
+    u_int32_t rdev, __enum_uint8(vtype) vtyp, struct ucred *cred, NFSPROC_T *p,
     struct nfsvattr *dnap, struct nfsvattr *nnap, struct nfsfh **nfhpp,
     int *attrflagp, int *dattrflagp)
 {

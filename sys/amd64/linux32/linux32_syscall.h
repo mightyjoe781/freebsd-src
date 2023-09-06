@@ -2,13 +2,12 @@
  * System call numbers.
  *
  * DO NOT EDIT-- this file is automatically @generated.
- * $FreeBSD$
  */
 
 #define	LINUX32_SYS_linux_exit	1
 #define	LINUX32_SYS_linux_fork	2
 #define	LINUX32_SYS_read	3
-#define	LINUX32_SYS_write	4
+#define	LINUX32_SYS_linux_write	4
 #define	LINUX32_SYS_linux_open	5
 #define	LINUX32_SYS_close	6
 #define	LINUX32_SYS_linux_waitpid	7

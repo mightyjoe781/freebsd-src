@@ -1,4 +1,3 @@
-# $FreeBSD$
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
@@ -112,7 +111,8 @@ v6_body()
 		"scrub fragment reassemble" \
 		"block in" \
 		"pass in inet6 proto icmp6 icmp6-type { neighbrsol, neighbradv }" \
-		"pass in inet6 proto icmp6 icmp6-type { echoreq, echorep }"
+		"pass in inet6 proto icmp6 icmp6-type { echoreq, echorep }" \
+		"set skip on lo"
 
 	# Host test
 	atf_check -s exit:0 -o ignore \

@@ -1,4 +1,3 @@
-# $FreeBSD$
 
 .include <src.opts.mk>
 
@@ -983,7 +982,13 @@ MLINKS+=DB_COMMAND.9 DB_ALIAS.9 \
 	DB_COMMAND.9 DB_SHOW_ALL_ALIAS.9 \
 	DB_COMMAND.9 DB_SHOW_ALL_COMMAND.9 \
 	DB_COMMAND.9 DB_SHOW_COMMAND.9 \
-	DB_COMMAND.9 DB_SHOW_COMMAND_FLAGS.9
+	DB_COMMAND.9 DB_SHOW_COMMAND_FLAGS.9 \
+	DB_COMMAND.9 DB_DECLARE_TABLE.9 \
+	DB_COMMAND.9 DB_DEFINE_TABLE.9 \
+	DB_COMMAND.9 DB_TABLE_COMMAND.9 \
+	DB_COMMAND.9 DB_TABLE_COMMAND_FLAGS.9 \
+	DB_COMMAND.9 DB_TABLE_ALIAS.9 \
+	DB_COMMAND.9 DB_TABLE_ALIAS_FLAGS.9
 MLINKS+=DECLARE_MODULE.9 DECLARE_MODULE_TIED.9
 MLINKS+=dev_clone.9 drain_dev_clone_events.9
 MLINKS+=dev_refthread.9 devvn_refthread.9 \
@@ -1112,7 +1117,8 @@ MLINKS+=fpu_kern.9 fpu_kern_alloc_ctx.9 \
 	fpu_kern.9 fpu_kern_thread.9 \
 	fpu_kern.9 is_fpu_kern_thread.9
 MLINKS+=g_attach.9 g_detach.9
-MLINKS+=g_bio.9 g_alloc_bio.9 \
+MLINKS+=g_bio.9 bio.9 \
+	g_bio.9 g_alloc_bio.9 \
 	g_bio.9 g_clone_bio.9 \
 	g_bio.9 g_destroy_bio.9 \
 	g_bio.9 g_duplicate_bio.9 \
@@ -1388,7 +1394,6 @@ MLINKS+=kqueue.9 knlist_add.9 \
 	kqueue.9 knlist_init.9 \
 	kqueue.9 knlist_init_mtx.9 \
 	kqueue.9 knlist_remove.9 \
-	kqueue.9 knlist_remove_inevent.9 \
 	kqueue.9 knote_fdclose.9 \
 	kqueue.9 KNOTE_LOCKED.9 \
 	kqueue.9 KNOTE_UNLOCKED.9 \
@@ -1823,8 +1828,7 @@ MLINKS+=prng.9 prng32.9 \
 	prng.9 prng64_bounded.9
 MLINKS+=proc_rwmem.9 proc_readmem.9 \
 	proc_rwmem.9 proc_writemem.9
-MLINKS+=psignal.9 gsignal.9 \
-	psignal.9 pgsignal.9 \
+MLINKS+=psignal.9 pgsignal.9 \
 	psignal.9 tdsignal.9
 MLINKS+=pwmbus.9 pwm.9
 MLINKS+=random.9 arc4rand.9 \

@@ -26,9 +26,6 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #define	__ELF_WORD_SIZE	64
 
 #include <sys/param.h>
@@ -54,7 +51,6 @@ __FBSDID("$FreeBSD$");
 
 #include <arm64/linux/linux.h>
 #include <arm64/linux/linux_proto.h>
-#include <compat/linux/linux_dtrace.h>
 #include <compat/linux/linux_elf.h>
 #include <compat/linux/linux_emul.h>
 #include <compat/linux/linux_fork.h>
@@ -109,12 +105,6 @@ static void	linux_exec_setregs(struct thread *td, struct image_params *imgp,
 static void	linux_exec_sysvec_init(void *param);
 static int	linux_on_exec_vmspace(struct proc *p,
 		    struct image_params *imgp);
-
-/* DTrace init */
-LIN_SDT_PROVIDER_DECLARE(LINUX_DTRACE);
-
-/* DTrace probes */
-LIN_SDT_PROBE_DEFINE0(sysvec, linux_exec_setregs, todo);
 
 LINUX_VDSO_SYM_CHAR(linux_platform);
 LINUX_VDSO_SYM_INTPTR(kern_timekeep_base);
@@ -181,19 +171,9 @@ linux_exec_setregs(struct thread *td, struct image_params *imgp,
 	struct trapframe *regs = td->td_frame;
 	struct pcb *pcb = td->td_pcb;
 
-	/* LINUXTODO: validate */
-	LIN_SDT_PROBE0(sysvec, linux_exec_setregs, todo);
-
 	memset(regs, 0, sizeof(*regs));
-	/* glibc start.S registers function pointer in x0 with atexit. */
-        regs->tf_sp = stack;
-#if 0	/* LINUXTODO: See if this is used. */
-	regs->tf_lr = imgp->entry_addr;
-#else
-        regs->tf_lr = 0xffffffffffffffff;
-#endif
-        regs->tf_elr = imgp->entry_addr;
-
+	regs->tf_sp = stack;
+	regs->tf_elr = imgp->entry_addr;
 	pcb->pcb_tpidr_el0 = 0;
 	pcb->pcb_tpidrro_el0 = 0;
 	WRITE_SPECIALREG(tpidrro_el0, 0);
@@ -376,7 +356,6 @@ struct sysentvec elf_linux_sysvec = {
 	.sv_elf_core_osabi = ELFOSABI_NONE,
 	.sv_elf_core_abi_vendor = LINUX_ABI_VENDOR,
 	.sv_elf_core_prepare_notes = linux64_prepare_notes,
-	.sv_imgact_try	= linux_exec_imgact_try,
 	.sv_minsigstksz	= LINUX_MINSIGSTKSZ,
 	.sv_minuser	= VM_MIN_ADDRESS,
 	.sv_maxuser	= VM_MAXUSER_ADDRESS,
@@ -415,7 +394,7 @@ linux_on_exec_vmspace(struct proc *p, struct image_params *imgp)
 	error = linux_map_vdso(p, linux_vdso_obj, linux_vdso_base,
 	    LINUX_VDSOPAGE_SIZE, imgp);
 	if (error == 0)
-		linux_on_exec(p, imgp);
+		error = linux_on_exec(p, imgp);
 	return (error);
 }
 
@@ -536,7 +515,6 @@ static Elf64_Brandinfo linux_glibc2brand = {
 	.brand		= ELFOSABI_LINUX,
 	.machine	= EM_AARCH64,
 	.compat_3_brand	= "Linux",
-	.emul_path	= linux_emul_path,
 	.interp_path	= "/lib64/ld-linux-x86-64.so.2",
 	.sysvec		= &elf_linux_sysvec,
 	.interp_newpath	= NULL,

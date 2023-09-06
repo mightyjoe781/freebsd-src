@@ -27,8 +27,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * $FreeBSD$
- *
  */
 
 #ifndef _MANA_H
@@ -188,6 +186,7 @@ struct mana_txq {
  */
 #define	MAX_MBUF_FRAGS		30
 #define MANA_TSO_MAXSEG_SZ	PAGE_SIZE
+#define MANA_TSO_MAX_SZ		IP_MAXPACKET
 
 /* mbuf data and frags dma mappings */
 struct mana_mbuf_head {

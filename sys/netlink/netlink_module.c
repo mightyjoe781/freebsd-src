@@ -29,7 +29,6 @@
 #include "opt_netlink.h"
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
@@ -223,6 +222,7 @@ netlink_modevent(module_t mod __unused, int what, void *priv __unused)
 	switch (what) {
 	case MOD_LOAD:
 		NL_LOG(LOG_DEBUG2, "Loading");
+		nl_init_msg_zone();
 		nl_osd_register();
 #if !defined(NETLINK) && defined(NETLINK_MODULE)
 		nl_set_functions(&nl_module);
@@ -238,6 +238,7 @@ netlink_modevent(module_t mod __unused, int what, void *priv __unused)
 			nl_set_functions(NULL);
 #endif
 			nl_osd_unregister();
+			nl_destroy_msg_zone();
 		} else
 			ret = EBUSY;
 		break;

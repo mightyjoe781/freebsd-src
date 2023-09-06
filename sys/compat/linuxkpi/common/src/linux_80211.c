@@ -40,8 +40,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/kernel.h>
@@ -2275,6 +2273,7 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	/* XXX-BZ hardcoded for now! */
 #if 1
 	vif->chanctx_conf = NULL;
+	vif->bss_conf.vif = vif;
 	vif->bss_conf.idle = true;
 	vif->bss_conf.ps = false;
 	vif->bss_conf.chandef.width = NL80211_CHAN_WIDTH_20_NOHT;
@@ -2669,12 +2668,7 @@ sw_scan:
 		int band, i, ssid_count, common_ie_len;
 		uint32_t band_mask;
 		uint8_t *ie, *ieend;
-
-		if (!ieee80211_hw_check(hw, SINGLE_SCAN_ON_ALL_BANDS)) {
-			IMPROVE("individual band scans not yet supported");
-			/* In theory net80211 would have to drive this. */
-			return;
-		}
+		bool running;
 
 		ssid_count = min(ss->ss_nssid, hw->wiphy->max_scan_ssids);
 		ssids_len = ssid_count * sizeof(*ssids);
@@ -2688,6 +2682,18 @@ sw_scan:
 			    ss->ss_chans[ss->ss_next + i]);
 			band_mask |= (1 << band);
 		}
+
+		if (!ieee80211_hw_check(hw, SINGLE_SCAN_ON_ALL_BANDS)) {
+			IMPROVE("individual band scans not yet supported, only scanning first band");
+			/* In theory net80211 should drive this. */
+			/* Probably we need to add local logic for now;
+			 * need to deal with scan_complete
+			 * and cancel_scan and keep local state.
+			 * Also cut the nchan down above.
+			 */
+			/* XXX-BZ ath10k does not set this but still does it? &$%^ */
+		}
+
 		chan_len = nchan * (sizeof(lc) + sizeof(*lc));
 
 		common_ie_len = 0;
@@ -2704,10 +2710,7 @@ sw_scan:
 			    common_ie_len, hw->wiphy->max_scan_ie_len);
 		}
 
-		KASSERT(lhw->hw_req == NULL, ("%s: ic %p lhw %p hw_req %p "
-		    "!= NULL\n", __func__, ic, lhw, lhw->hw_req));
-
-		lhw->hw_req = hw_req = malloc(sizeof(*hw_req) + ssids_len +
+		hw_req = malloc(sizeof(*hw_req) + ssids_len +
 		    s6ghzlen + chan_len + lhw->supbands * lhw->scan_ie_len +
 		    common_ie_len, M_LKPI80211, M_WAITOK | M_ZERO);
 
@@ -2737,7 +2740,7 @@ sw_scan:
 			c = ss->ss_chans[ss->ss_next + i];
 
 			lc->hw_value = c->ic_ieee;
-			lc->center_freq = c->ic_freq;
+			lc->center_freq = c->ic_freq;	/* XXX */
 			/* lc->flags */
 			lc->band = lkpi_net80211_chan_to_nl80211_band(c);
 			lc->max_power = c->ic_maxpower;
@@ -2774,12 +2777,48 @@ sw_scan:
 
 		lvif = VAP_TO_LVIF(vap);
 		vif = LVIF_TO_VIF(lvif);
+
+		LKPI_80211_LHW_SCAN_LOCK(lhw);
+		/* Re-check under lock. */
+		running = (lhw->scan_flags & LKPI_LHW_SCAN_RUNNING) != 0;
+		if (!running) {
+			KASSERT(lhw->hw_req == NULL, ("%s: ic %p lhw %p hw_req %p "
+			    "!= NULL\n", __func__, ic, lhw, lhw->hw_req));
+
+			lhw->scan_flags |= LKPI_LHW_SCAN_RUNNING;
+			lhw->hw_req = hw_req;
+		}
+		LKPI_80211_LHW_SCAN_UNLOCK(lhw);
+		if (running) {
+			free(hw_req, M_LKPI80211);
+			return;
+		}
+
 		error = lkpi_80211_mo_hw_scan(hw, vif, hw_req);
 		if (error != 0) {
 			ieee80211_cancel_scan(vap);
 
-			free(hw_req, M_LKPI80211);
-			lhw->hw_req = NULL;
+			/*
+			 * ieee80211_scan_completed must be called in either
+			 * case of error or none.  So let the free happen there
+			 * and only there.
+			 * That would be fine in theory but in practice drivers
+			 * behave differently:
+			 * ath10k does not return hw_scan until after scan_complete
+			 *        and can then still return an error.
+			 * rtw88 can return 1 or -EBUSY without scan_complete
+			 * iwlwifi can return various errors before scan starts
+			 * ...
+			 * So we cannot rely on that behaviour and have to check
+			 * and balance between both code paths.
+			 */
+			LKPI_80211_LHW_SCAN_LOCK(lhw);
+			if ((lhw->scan_flags & LKPI_LHW_SCAN_RUNNING) != 0) {
+				free(lhw->hw_req, M_LKPI80211);
+				lhw->hw_req = NULL;
+				lhw->scan_flags &= ~LKPI_LHW_SCAN_RUNNING;
+			}
+			LKPI_80211_LHW_SCAN_UNLOCK(lhw);
 
 			/*
 			 * XXX-SIGH magic number.
@@ -2790,6 +2829,12 @@ sw_scan:
 				LKPI_80211_LHW_SCAN_LOCK(lhw);
 				lhw->scan_flags &= ~LKPI_LHW_SCAN_HW;
 				LKPI_80211_LHW_SCAN_UNLOCK(lhw);
+				/*
+				 * XXX If we clear this now and later a driver
+				 * thinks it * can do a hw_scan again, we will
+				 * currently not re-enable it?
+				 */
+				vap->iv_flags_ext &= ~IEEE80211_FEXT_SCAN_OFFLOAD;
 				ieee80211_start_scan(vap,
 				    IEEE80211_SCAN_ACTIVE |
 				    IEEE80211_SCAN_NOPICK |
@@ -3475,6 +3520,7 @@ linuxkpi_ieee80211_alloc_hw(size_t priv_len, const struct ieee80211_ops *ops)
 	struct ieee80211_hw *hw;
 	struct lkpi_hw *lhw;
 	struct wiphy *wiphy;
+	int ac;
 
 	/* Get us and the driver data also allocated. */
 	wiphy = wiphy_new(&linuxkpi_mac80211cfgops, sizeof(*lhw) + priv_len);
@@ -3488,6 +3534,10 @@ linuxkpi_ieee80211_alloc_hw(size_t priv_len, const struct ieee80211_ops *ops)
 	LKPI_80211_LHW_SCAN_LOCK_INIT(lhw);
 	sx_init_flags(&lhw->lvif_sx, "lhw-lvif", SX_RECURSE | SX_DUPOK);
 	TAILQ_INIT(&lhw->lvif_head);
+	for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
+		lhw->txq_generation[ac] = 1;
+		TAILQ_INIT(&lhw->scheduled_txqs[ac]);
+	}
 
 	/*
 	 * XXX-BZ TODO make sure there is a "_null" function to all ops
@@ -3796,12 +3846,12 @@ linuxkpi_ieee80211_iterate_interfaces(struct ieee80211_hw *hw,
 	if (flags & ~(IEEE80211_IFACE_ITER_NORMAL|
 	    IEEE80211_IFACE_ITER_RESUME_ALL|
 	    IEEE80211_IFACE_SKIP_SDATA_NOT_IN_DRIVER|
-	    IEEE80211_IFACE_ITER__ACTIVE|IEEE80211_IFACE_ITER__ATOMIC)) {
+	    IEEE80211_IFACE_ITER_ACTIVE|IEEE80211_IFACE_ITER__ATOMIC)) {
 		ic_printf(lhw->ic, "XXX TODO %s flags(%#x) not yet supported.\n",
 		    __func__, flags);
 	}
 
-	active = (flags & IEEE80211_IFACE_ITER__ACTIVE) != 0;
+	active = (flags & IEEE80211_IFACE_ITER_ACTIVE) != 0;
 	atomic = (flags & IEEE80211_IFACE_ITER__ATOMIC) != 0;
 	nin_drv = (flags & IEEE80211_IFACE_SKIP_SDATA_NOT_IN_DRIVER) != 0;
 
@@ -4466,7 +4516,7 @@ linuxkpi_ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 		txs.final_rate = info->status.rates[0].idx;
 		txs.flags |= IEEE80211_RATECTL_STATUS_FINAL_RATE;
 #endif
-		if (info->status.is_valid_ack_signal) {
+		if (info->status.flags & IEEE80211_TX_STATUS_ACK_SIGNAL_VALID) {
 			txs.rssi = info->status.ack_signal;		/* XXX-BZ CONVERT? */
 			txs.flags |= IEEE80211_RATECTL_STATUS_RSSI;
 		}
@@ -4491,7 +4541,7 @@ linuxkpi_ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 		    "band %u hw_queue %u tx_time_est %d : "
 		    "rates [ %u %u %#x, %u %u %#x, %u %u %#x, %u %u %#x ] "
 		    "ack_signal %u ampdu_ack_len %u ampdu_len %u antenna %u "
-		    "tx_time %u is_valid_ack_signal %u "
+		    "tx_time %u flags %#x "
 		    "status_driver_data [ %p %p ]\n",
 		    __func__, hw, skb, status, info->flags,
 		    info->band, info->hw_queue, info->tx_time_est,
@@ -4505,7 +4555,7 @@ linuxkpi_ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 		    info->status.rates[3].flags,
 		    info->status.ack_signal, info->status.ampdu_ack_len,
 		    info->status.ampdu_len, info->status.antenna,
-		    info->status.tx_time, info->status.is_valid_ack_signal,
+		    info->status.tx_time, info->status.flags,
 		    info->status.status_driver_data[0],
 		    info->status.status_driver_data[1]);
 #endif
@@ -4649,12 +4699,14 @@ linuxkpi_ieee80211_pspoll_get(struct ieee80211_hw *hw,
 
 struct sk_buff *
 linuxkpi_ieee80211_nullfunc_get(struct ieee80211_hw *hw,
-    struct ieee80211_vif *vif, bool qos)
+    struct ieee80211_vif *vif, int linkid, bool qos)
 {
 	struct lkpi_vif *lvif;
 	struct ieee80211vap *vap;
 	struct sk_buff *skb;
 	struct ieee80211_frame *nullf;
+
+	IMPROVE("linkid");
 
 	skb = dev_alloc_skb(hw->extra_tx_headroom + sizeof(*nullf));
 	if (skb == NULL)

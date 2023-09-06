@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/bus.h>
@@ -800,8 +798,7 @@ mana_init_port_context(struct mana_port_context *apc)
 	uint32_t tso_maxsize;
 	int err;
 
-	tso_maxsize = MAX_MBUF_FRAGS * MANA_TSO_MAXSEG_SZ -
-	    (ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN);
+	tso_maxsize = MANA_TSO_MAX_SZ;
 
 	/* Create DMA tag for tx bufs */
 	err = bus_dma_tag_create(bus_get_dma_tag(dev),	/* parent */
@@ -983,14 +980,12 @@ mana_query_vport_cfg(struct mana_port_context *apc, uint32_t vport_index,
 void
 mana_uncfg_vport(struct mana_port_context *apc)
 {
-	MANA_APC_LOCK_LOCK(apc);
 	apc->vport_use_count--;
 	if (apc->vport_use_count < 0) {
 		mana_err(NULL,
 		    "WARNING: vport_use_count less than 0: %u\n",
 		    apc->vport_use_count);
 	}
-	MANA_APC_LOCK_UNLOCK(apc);
 }
 
 int
@@ -1019,13 +1014,10 @@ mana_cfg_vport(struct mana_port_context *apc, uint32_t protection_dom_id,
 	 * QPs on a physical port up to the hardware limits independent of the
 	 * Ethernet usage on the same port.
 	 */
-	MANA_APC_LOCK_LOCK(apc);
 	if (apc->vport_use_count > 0) {
-		MANA_APC_LOCK_UNLOCK(apc);
 		return EBUSY;
 	}
 	apc->vport_use_count++;
-	MANA_APC_LOCK_UNLOCK(apc);
 
 	mana_gd_init_req_hdr(&req.hdr, MANA_CONFIG_VPORT_TX,
 	    sizeof(req), sizeof(resp));
@@ -1531,7 +1523,7 @@ mana_post_pkt_rxq(struct mana_rxq *rxq)
 
 	recv_buf_oob = &rxq->rx_oobs[curr_index];
 
-	err = mana_gd_post_and_ring(rxq->gdma_rq, &recv_buf_oob->wqe_req,
+	err = mana_gd_post_work_request(rxq->gdma_rq, &recv_buf_oob->wqe_req,
 	    &recv_buf_oob->wqe_inf);
 	if (err) {
 		mana_err(NULL, "WARNING: rxq %u post pkt err %d\n",
@@ -1762,6 +1754,13 @@ mana_poll_rx_cq(struct mana_cq *cq)
 		}
 
 		mana_process_rx_cqe(cq->rxq, cq, &comp[i]);
+	}
+
+	if (comp_read > 0) {
+		struct gdma_context *gc =
+		    cq->rxq->gdma_rq->gdma_dev->gdma_context;
+
+		mana_gd_wq_ring_doorbell(gc, cq->rxq->gdma_rq);
 	}
 
 	tcp_lro_flush_all(&cq->rxq->lro);
@@ -2712,6 +2711,7 @@ mana_probe_port(struct mana_context *ac, int port_idx,
 {
 	struct gdma_context *gc = ac->gdma_dev->gdma_context;
 	struct mana_port_context *apc;
+	uint32_t hwassist;
 	if_t ndev;
 	int err;
 
@@ -2774,10 +2774,20 @@ mana_probe_port(struct mana_context *ac, int port_idx,
 	if_setcapenable(ndev, if_getcapabilities(ndev));
 
 	/* TSO parameters */
-	if_sethwtsomax(ndev, MAX_MBUF_FRAGS * MANA_TSO_MAXSEG_SZ -
+	if_sethwtsomax(ndev, MANA_TSO_MAX_SZ -
 	    (ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN));
 	if_sethwtsomaxsegcount(ndev, MAX_MBUF_FRAGS);
 	if_sethwtsomaxsegsize(ndev, PAGE_SIZE);
+
+	hwassist = 0;
+	if (if_getcapenable(ndev) & (IFCAP_TSO4 | IFCAP_TSO6))
+		hwassist |= CSUM_TSO;
+	if (if_getcapenable(ndev) & IFCAP_TXCSUM)
+		hwassist |= (CSUM_TCP | CSUM_UDP | CSUM_IP);
+	if (if_getcapenable(ndev) & IFCAP_TXCSUM_IPV6)
+		hwassist |= (CSUM_UDP_IPV6 | CSUM_TCP_IPV6);
+	mana_dbg(NULL, "set hwassist 0x%x\n", hwassist);
+	if_sethwassist(ndev, hwassist);
 
 	ifmedia_init(&apc->media, IFM_IMASK,
 	    mana_ifmedia_change, mana_ifmedia_status);

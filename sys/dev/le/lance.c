@@ -67,8 +67,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/endian.h>
@@ -199,6 +197,8 @@ lance_attach(struct lance_softc *sc)
 	if_setifheaderlen(ifp, sizeof(struct ether_vlan_header));
 	if_setcapabilitiesbit(ifp, IFCAP_VLAN_MTU, 0);
 	if_setcapenablebit(ifp, IFCAP_VLAN_MTU, 0);
+
+	gone_in(15, "le: 10/100 NIC no longer needed for Qemu/MIPS");
 }
 
 void
