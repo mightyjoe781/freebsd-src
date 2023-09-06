@@ -237,7 +237,7 @@ function freebsd_utils.get_qemu_bin(ma)
 end
 
 -- returns the qemu script for the m, ma
-function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw_disk)
+function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
 
     local script_file = ""
     local qemu_bin = freebsd_utils.get_qemu_bin(ma)
@@ -250,10 +250,7 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw
       -monitor telnet::4444,server,nowait \
       -serial stdio $*]],
       qemu_bin, img, bios_code, bios_vars)
-
     elseif ma == "aarch64" then
-      local raw = raw_disk
-
         -- make a raw file
       script_file = string.format([[%s -nographic -machine virt,gic-version=3 -m 512M \
       -cpu cortex-a57 -drive file=%s,if=none,id=drive0,cache=writeback -smp 4 \
@@ -264,8 +261,17 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw
       -device nvme,serial=deadbeef,drive=drive1 \
       -monitor telnet::4444,server,nowait \
       -serial stdio $*]],
-      qemu_bin, img, bios_code, bios_vars, raw)
+      qemu_bin, img, bios_code, bios_vars)
+    elseif ma == "riscv64" then
+        script_file = string.format([[%s -machine virt -m 2048M -smp 2 -nographic \
+        -bios /usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf \
+        -kernel /usr/local/share/u-boot/u-boot-qemu-riscv64/u-boot.bin \
+        -drive file=%s,format=raw,id=hd0 \
+        -device virtio-blk-device,drive=hd0,bootindex=0 \
+        -monitor telnet::4440,server,nowait \
+        -serial stdio $*]],qemu_bin,img)
     end
+
     return script_file
 end
 

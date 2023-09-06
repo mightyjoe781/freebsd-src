@@ -338,8 +338,7 @@ local function make_freebsd_scripts(config)
     local script = build.SCRIPT_DIR.."/"..mc.."/freebsd-"..identifier..".sh"
     utils.execute("mkdir -p "..build.SCRIPT_DIR.."/"..mc)
 
-    local raw_disk = build.IMAGE_DIR.."/"..mc.."/nvme-test-empty.raw"
-    local qemu_script = freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, raw_disk)
+    local qemu_script = freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
     utils.write_data_to_file(script, qemu_script)
 end
 
