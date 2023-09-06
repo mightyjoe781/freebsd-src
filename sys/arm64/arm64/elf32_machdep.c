@@ -33,8 +33,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #define	__ELF_WORD_SIZE 32
 
 #include <sys/param.h>
@@ -94,7 +92,6 @@ static struct sysentvec elf32_freebsd_sysvec = {
 	.sv_elf_core_osabi = ELFOSABI_FREEBSD,
 	.sv_elf_core_abi_vendor = FREEBSD_ABI_VENDOR,
 	.sv_elf_core_prepare_notes = elf32_prepare_notes,
-	.sv_imgact_try	= NULL,
 	.sv_minsigstksz	= MINSIGSTKSZ,
 	.sv_minuser	= FREEBSD32_MINUSER,
 	.sv_maxuser	= FREEBSD32_MAXUSER,
@@ -130,7 +127,6 @@ static Elf32_Brandinfo freebsd32_brand_info = {
 	.brand		= ELFOSABI_FREEBSD,
 	.machine	= EM_ARM,
 	.compat_3_brand	= "FreeBSD",
-	.emul_path	= NULL,
 	.interp_path	= "/libexec/ld-elf.so.1",
 	.sysvec		= &elf32_freebsd_sysvec,
 	.interp_newpath	= "/libexec/ld-elf32.so.1",

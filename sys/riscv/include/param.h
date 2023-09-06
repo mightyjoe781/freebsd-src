@@ -27,7 +27,6 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)param.h	5.8 (Berkeley) 6/28/91
- * $FreeBSD$
  */
 
 #ifndef _MACHINE_PARAM_H_
@@ -49,9 +48,6 @@
 #endif
 #ifndef MACHINE_ARCH
 #define	MACHINE_ARCH	"riscv64"
-#endif
-#ifdef _KERNEL
-#define	MACHINE_ARCHES	"riscv64"
 #endif
 
 #ifdef SMP

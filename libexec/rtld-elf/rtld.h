@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 #ifndef RTLD_H /* { */
@@ -245,7 +243,8 @@ typedef struct Struct_Obj_Entry {
     bool traced : 1;		/* Already printed in ldd trace output */
     bool jmpslots_done : 1;	/* Already have relocated the jump slots */
     bool init_done : 1;		/* Already have added object to init list */
-    bool tls_done : 1;		/* Already allocated offset for static TLS */
+    bool tls_static : 1;	/* Already allocated offset for static TLS */
+    bool tls_dynamic : 1;	/* A non-static DTV entry has been allocated */
     bool phdr_alloc : 1;	/* Phdr is allocated and needs to be freed. */
     bool z_origin : 1;		/* Process rpath and soname tokens */
     bool z_nodelete : 1;	/* Do not unload the object and dependencies */
@@ -362,8 +361,7 @@ Obj_Entry *map_object(int, const char *, const struct stat *);
 void *xcalloc(size_t, size_t);
 void *xmalloc(size_t);
 char *xstrdup(const char *);
-void *malloc_aligned(size_t size, size_t align, size_t offset);
-void free_aligned(void *ptr);
+void *xmalloc_aligned(size_t size, size_t align, size_t offset);
 extern Elf_Addr _GLOBAL_OFFSET_TABLE_[];
 extern Elf_Sym sym_zero;	/* For resolving undefined weak refs. */
 extern bool ld_bind_not;
@@ -417,10 +415,5 @@ int reloc_gnu_ifunc(Obj_Entry *, int flags, struct Struct_RtldLockState *);
 void ifunc_init(Elf_Auxinfo[__min_size(AT_COUNT)]);
 void init_pltgot(Obj_Entry *);
 void allocate_initial_tls(Obj_Entry *);
-
-void *__crt_calloc(size_t num, size_t size);
-void __crt_free(void *cp);
-void *__crt_malloc(size_t nbytes);
-void *__crt_realloc(void *cp, size_t nbytes);
 
 #endif /* } */

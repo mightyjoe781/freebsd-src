@@ -28,8 +28,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -505,7 +503,6 @@ nat64clat_foreach(nat64clat_cb_t *f, const char *name, uint8_t set, int sort)
 	ipfw_nat64clat_cfg *cfg;
 	size_t sz;
 	uint32_t i;
-	int error;
 
 	/* Start with reasonable default */
 	sz = sizeof(*olh) + 16 * sizeof(*cfg);
@@ -528,7 +525,7 @@ nat64clat_foreach(nat64clat_cb_t *f, const char *name, uint8_t set, int sort)
 
 		cfg = (ipfw_nat64clat_cfg *)(olh + 1);
 		for (i = 0; i < olh->count; i++) {
-			error = f(cfg, name, set); /* Ignore errors for now */
+			(void)f(cfg, name, set); /* Ignore errors for now */
 			cfg = (ipfw_nat64clat_cfg *)((caddr_t)cfg +
 			    olh->objsize);
 		}

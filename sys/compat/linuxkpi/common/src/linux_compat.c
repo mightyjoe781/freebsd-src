@@ -28,8 +28,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include "opt_stack.h"
 
 #include <sys/param.h>
@@ -2145,6 +2143,20 @@ del_timer_sync(struct timer_list *timer)
 	if (callout_drain(&(timer)->callout) == -1)
 		return (0);
 	return (1);
+}
+
+int
+timer_delete_sync(struct timer_list *timer)
+{
+
+	return (del_timer_sync(timer));
+}
+
+int
+timer_shutdown_sync(struct timer_list *timer)
+{
+
+	return (del_timer_sync(timer));
 }
 
 /* greatest common divisor, Euclid equation */

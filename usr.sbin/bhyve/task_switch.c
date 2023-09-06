@@ -27,14 +27,11 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/param.h>
 #include <sys/_iovec.h>
 #include <sys/mman.h>
 
 #include <x86/psl.h>
-#include <x86/segments.h>
 #include <x86/specialreg.h>
 #include <machine/vmm.h>
 #include <machine/vmm_instruction_emul.h>

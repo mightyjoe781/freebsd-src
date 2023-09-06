@@ -35,7 +35,6 @@
  * SUCH DAMAGE.
  *
  *	@(#)union_subr.c	8.20 (Berkeley) 5/20/95
- * $FreeBSD$
  */
 
 #include <sys/param.h>
@@ -308,7 +307,7 @@ unionfs_nodeget(struct mount *mp, struct vnode *uppervp,
 	u_long		hashmask;
 	int		error;
 	int		lkflags;
-	enum vtype	vt;
+	__enum_uint8(vtype)	vt;
 
 	error = 0;
 	ump = MOUNTTOUNIONFSMOUNT(mp);

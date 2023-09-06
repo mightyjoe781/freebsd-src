@@ -96,8 +96,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 /*
  *	Manages physical address maps.
  *
@@ -187,8 +185,10 @@ __FBSDID("$FreeBSD$");
 
 #ifdef PV_STATS
 #define PV_STAT(x)	do { x ; } while (0)
+#define	__pv_stat_used
 #else
 #define PV_STAT(x)	do { } while (0)
+#define	__pv_stat_used	__unused
 #endif
 
 #define	pmap_l1_pindex(v)	(NUL2E + ((v) >> L1_SHIFT))
@@ -253,6 +253,15 @@ vm_offset_t dmap_max_addr;	/* The virtual address limit of the dmap */
 /* This code assumes all L1 DMAP entries will be used */
 CTASSERT((DMAP_MIN_ADDRESS  & ~L1_OFFSET) == DMAP_MIN_ADDRESS);
 CTASSERT((DMAP_MAX_ADDRESS  & ~L1_OFFSET) == DMAP_MAX_ADDRESS);
+
+/*
+ * This code assumes that the early DEVMAP is L2_SIZE aligned and is fully
+ * contained within a single L2 entry. The early DTB is mapped immediately
+ * before the devmap L2 entry.
+ */
+CTASSERT((PMAP_MAPDEV_EARLY_SIZE & L2_OFFSET) == 0);
+CTASSERT((VM_EARLY_DTB_ADDRESS & L2_OFFSET) == 0);
+CTASSERT(VM_EARLY_DTB_ADDRESS < (VM_MAX_KERNEL_ADDRESS - PMAP_MAPDEV_EARLY_SIZE));
 
 static struct rwlock_padalign pvh_global_lock;
 static struct mtx_padalign allpmaps_lock;
@@ -635,6 +644,8 @@ pmap_bootstrap(vm_offset_t l1pt, vm_paddr_t kernstart, vm_size_t kernlen)
 	/* Set this early so we can use the pagetable walking functions */
 	kernel_pmap_store.pm_top = (pd_entry_t *)l1pt;
 	PMAP_LOCK_INIT(kernel_pmap);
+	TAILQ_INIT(&kernel_pmap->pm_pvchunk);
+	vm_radix_init(&kernel_pmap->pm_root);
 
 	rw_init(&pvh_global_lock, "pmap pv global");
 
@@ -684,7 +695,7 @@ pmap_bootstrap(vm_offset_t l1pt, vm_paddr_t kernstart, vm_size_t kernlen)
 
 	/* Create the l3 tables for the early devmap */
 	freemempos = pmap_bootstrap_l3(l1pt,
-	    VM_MAX_KERNEL_ADDRESS - L2_SIZE, freemempos);
+	    VM_MAX_KERNEL_ADDRESS - PMAP_MAPDEV_EARLY_SIZE, freemempos);
 
 	/*
 	 * Invalidate the mapping we created for the DTB. At this point a copy
@@ -738,7 +749,7 @@ pmap_bootstrap(vm_offset_t l1pt, vm_paddr_t kernstart, vm_size_t kernlen)
 	msgbufp = (void *)msgbufpv;
 
 	virtual_avail = roundup2(freemempos, L2_SIZE);
-	virtual_end = VM_MAX_KERNEL_ADDRESS - L2_SIZE;
+	virtual_end = VM_MAX_KERNEL_ADDRESS - PMAP_MAPDEV_EARLY_SIZE;
 	kernel_vm_end = virtual_avail;
 
 	pa = pmap_early_vtophys(l1pt, freemempos);
@@ -1315,6 +1326,8 @@ pmap_pinit0(pmap_t pmap)
 	pmap->pm_satp = pmap_satp_mode() |
 	    (vtophys(pmap->pm_top) >> PAGE_SHIFT);
 	CPU_ZERO(&pmap->pm_active);
+	TAILQ_INIT(&pmap->pm_pvchunk);
+	vm_radix_init(&pmap->pm_root);
 	pmap_activate_boot(pmap);
 }
 
@@ -1356,6 +1369,7 @@ pmap_pinit(pmap_t pmap)
 		pmap->pm_top[i] = kernel_pmap->pm_top[i];
 	}
 
+	TAILQ_INIT(&pmap->pm_pvchunk);
 	vm_radix_init(&pmap->pm_root);
 
 	return (1);
@@ -3886,7 +3900,7 @@ pmap_remove_pages(pmap_t pmap)
 	struct rwlock *lock;
 	int64_t bit;
 	uint64_t inuse, bitmask;
-	int allfree, field, freed, idx;
+	int allfree, field, freed __pv_stat_used, idx;
 	bool superpage;
 
 	lock = NULL;
@@ -4671,6 +4685,12 @@ pmap_activate_boot(pmap_t pmap)
 	CPU_SET(hart, &pmap->pm_active);
 #endif
 	PCPU_SET(curpmap, pmap);
+}
+
+void
+pmap_active_cpus(pmap_t pmap, cpuset_t *res)
+{
+	*res = pmap->pm_active;
 }
 
 void

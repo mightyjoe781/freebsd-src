@@ -1,4 +1,3 @@
-# $FreeBSD$
 
 #
 # Warning flags for compiling the kernel and components of the kernel:
@@ -46,13 +45,6 @@ CWARNEXTRA?=	-Wno-error=tautological-compare -Wno-error=empty-body \
 		-Wno-error=pointer-sign
 CWARNEXTRA+=	-Wno-error=shift-negative-value
 CWARNEXTRA+=	-Wno-address-of-packed-member
-.if ${COMPILER_VERSION} >= 150000
-# Clang 15 has much more aggressive diagnostics about
-# mismatched prototypes and unused-but-set variables. Make these
-# non-fatal for the time being.
-CWARNEXTRA+=	-Wno-error=strict-prototypes
-CWARNEXTRA+=	-Wno-error=unused-but-set-variable
-.endif
 .endif	# clang
 
 .if ${COMPILER_TYPE} == "gcc"
@@ -250,20 +242,14 @@ CFLAGS+=	-mretpoline
 #
 # Initialize stack variables on function entry
 #
-.if ${MK_INIT_ALL_ZERO} == "yes"
+.if ${OPT_INIT_ALL} != "none"
 .if ${COMPILER_FEATURES:Minit-all}
-CFLAGS+= -ftrivial-auto-var-init=zero
-.if ${COMPILER_TYPE} == "clang" && ${COMPILER_VERSION} < 160000
+CFLAGS+= -ftrivial-auto-var-init=${OPT_INIT_ALL}
+.if ${OPT_INIT_ALL} == "zero" && ${COMPILER_TYPE} == "clang" && ${COMPILER_VERSION} < 160000
 CFLAGS+= -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang
 .endif
 .else
-.warning InitAll (zeros) requested but not supported by compiler
-.endif
-.elif ${MK_INIT_ALL_PATTERN} == "yes"
-.if ${COMPILER_FEATURES:Minit-all}
-CFLAGS+= -ftrivial-auto-var-init=pattern
-.else
-.warning InitAll (pattern) requested but not support by compiler
+.warning INIT_ALL (${OPT_INIT_ALL}) requested but not supported by compiler
 .endif
 .endif
 
@@ -285,7 +271,7 @@ PHONY_NOTMAIN = afterdepend afterinstall all beforedepend beforeinstall \
 .PHONY: ${PHONY_NOTMAIN}
 .NOTMAIN: ${PHONY_NOTMAIN}
 
-CSTD=		c99
+CSTD=		gnu99
 
 .if ${CSTD} == "k&r"
 CFLAGS+=        -traditional

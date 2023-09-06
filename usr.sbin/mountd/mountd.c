@@ -45,8 +45,6 @@ static char sccsid[] = "@(#)mountd.c	8.15 (Berkeley) 5/1/95";
 #endif
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/param.h>
 #include <sys/conf.h>
 #include <sys/fcntl.h>
@@ -290,7 +288,7 @@ static int resvport_only = 1;
 static int nhosts = 0;
 static int dir_only = 1;
 static int dolog = 0;
-static int got_sighup = 0;
+static _Atomic(int) got_sighup = 0;
 static int xcreated = 0;
 
 static char *svcport_str = NULL;
@@ -2310,7 +2308,7 @@ compare_export(struct exportlist *ep, struct exportlist *oep)
  * "same" refers to having the same set of values in the two arrays.
  * The arrays are in no particular order and duplicates (multiple entries
  * in an array with the same value) is allowed.
- * The algorithm is inefficient, but the common case of indentical arrays is
+ * The algorithm is inefficient, but the common case of identical arrays is
  * handled first and "n" is normally fairly small.
  * Since the two functions need the same algorithm but for arrays of
  * different types (gid_t vs int), this is done as a macro.

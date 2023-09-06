@@ -1,4 +1,3 @@
-# $FreeBSD$
 
 # Vendor sources and generated files
 LDNSDIR = ${SRCTOP}/contrib/ldns
@@ -24,6 +23,7 @@ LIBADD=	ssl crypto
 
 WARNS?=	3
 
+CWARNFLAGS.edns.c=	${NO_WSTRICT_PROTOTYPES}
 CWARNFLAGS.parse.c=	${NO_WUSE_AFTER_FREE}
 CWARNFLAGS.sha2.c=	${NO_WARRAY_PARAMETER}
 

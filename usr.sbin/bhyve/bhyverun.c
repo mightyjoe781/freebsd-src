@@ -24,13 +24,9 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/types.h>
 #ifndef WITHOUT_CAPSICUM
 #include <sys/capsicum.h>
@@ -107,12 +103,11 @@ __FBSDID("$FreeBSD$");
 #ifdef BHYVE_SNAPSHOT
 #include "snapshot.h"
 #endif
+#include "tpm_device.h"
 #include "xmsr.h"
 #include "spinup_ap.h"
 #include "rtc.h"
 #include "vmgenc.h"
-
-#define GUEST_NIO_PORT		0x488	/* guest upcalls via i/o port */
 
 #define MB		(1024UL * 1024)
 #define GB		(1024UL * MB)
@@ -210,7 +205,7 @@ static void
 usage(int code)
 {
 
-        fprintf(stderr,
+	fprintf(stderr,
 		"Usage: %s [-AaCDeHhPSuWwxY]\n"
 		"       %*s [-c [[cpus=]numcpus][,sockets=n][,cores=n][,threads=n]]\n"
 		"       %*s [-G port] [-k config_file] [-l lpc] [-m mem] [-o var=value]\n"
@@ -282,10 +277,6 @@ topology_parse(const char *opt)
 			set_config_value("cores", cp + strlen("cores="));
 		else if (strncmp(cp, "threads=", strlen("threads=")) == 0)
 			set_config_value("threads", cp + strlen("threads="));
-#ifdef notyet  /* Do not expose this until vmm.ko implements it */
-		else if (strncmp(cp, "maxcpus=", strlen("maxcpus=")) == 0)
-			set_config_value("maxcpus", cp + strlen("maxcpus="));
-#endif
 		else if (strchr(cp, '=') != NULL)
 			goto out;
 		else
@@ -555,29 +546,31 @@ fbsdrun_addcpu(struct vcpu_info *vi)
 	assert(error == 0);
 }
 
-static int
+static void
 fbsdrun_deletecpu(int vcpu)
 {
+	static pthread_mutex_t resetcpu_mtx = PTHREAD_MUTEX_INITIALIZER;
+	static pthread_cond_t resetcpu_cond = PTHREAD_COND_INITIALIZER;
 
+	pthread_mutex_lock(&resetcpu_mtx);
 	if (!CPU_ISSET(vcpu, &cpumask)) {
 		fprintf(stderr, "Attempting to delete unknown cpu %d\n", vcpu);
 		exit(4);
 	}
 
-	CPU_CLR_ATOMIC(vcpu, &cpumask);
-	return (CPU_EMPTY(&cpumask));
-}
+	CPU_CLR(vcpu, &cpumask);
 
-static int
-vmexit_handle_notify(struct vmctx *ctx __unused, struct vcpu *vcpu __unused,
-    struct vm_exit *vme __unused, uint32_t eax __unused)
-{
-#if BHYVE_DEBUG
-	/*
-	 * put guest-driven debug here
-	 */
-#endif
-	return (VMEXIT_CONTINUE);
+	if (vcpu != BSP) {
+		pthread_cond_signal(&resetcpu_cond);
+		pthread_mutex_unlock(&resetcpu_mtx);
+		pthread_exit(NULL);
+		/* NOTREACHED */
+	}
+
+	while (!CPU_EMPTY(&cpumask)) {
+		pthread_cond_wait(&resetcpu_cond, &resetcpu_mtx);
+	}
+	pthread_mutex_unlock(&resetcpu_mtx);
 }
 
 static int
@@ -585,19 +578,12 @@ vmexit_inout(struct vmctx *ctx, struct vcpu *vcpu, struct vm_run *vmrun)
 {
 	struct vm_exit *vme;
 	int error;
-	int bytes, port, in, out;
+	int bytes, port, in;
 
 	vme = vmrun->vm_exit;
 	port = vme->u.inout.port;
 	bytes = vme->u.inout.bytes;
 	in = vme->u.inout.in;
-	out = !in;
-
-        /* Extra-special case of host notifications */
-        if (out && port == GUEST_NIO_PORT) {
-                error = vmexit_handle_notify(ctx, vcpu, vme, vme->u.inout.eax);
-		return (error);
-	}
 
 	error = emulate_inout(ctx, vcpu, vme);
 	if (error) {
@@ -839,9 +825,6 @@ fail:
 	return (VMEXIT_ABORT);
 }
 
-static pthread_mutex_t resetcpu_mtx = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t resetcpu_cond = PTHREAD_COND_INITIALIZER;
-
 static int
 vmexit_suspend(struct vmctx *ctx, struct vcpu *vcpu, struct vm_run *vmrun)
 {
@@ -854,19 +837,6 @@ vmexit_suspend(struct vmctx *ctx, struct vcpu *vcpu, struct vm_run *vmrun)
 	how = vme->u.suspended.how;
 
 	fbsdrun_deletecpu(vcpuid);
-
-	if (vcpuid != BSP) {
-		pthread_mutex_lock(&resetcpu_mtx);
-		pthread_cond_signal(&resetcpu_cond);
-		pthread_mutex_unlock(&resetcpu_mtx);
-		pthread_exit(NULL);
-	}
-
-	pthread_mutex_lock(&resetcpu_mtx);
-	while (!CPU_EMPTY(&cpumask)) {
-		pthread_cond_wait(&resetcpu_cond, &resetcpu_mtx);
-	}
-	pthread_mutex_unlock(&resetcpu_mtx);
 
 	switch (how) {
 	case VM_SUSPEND_RESET:
@@ -951,7 +921,7 @@ vmexit_ipi(struct vmctx *ctx __unused, struct vcpu *vcpu __unused,
 	return (error);
 }
 
-static vmexit_handler_t handler[VM_EXITCODE_MAX] = {
+static const vmexit_handler_t handler[VM_EXITCODE_MAX] = {
 	[VM_EXITCODE_INOUT]  = vmexit_inout,
 	[VM_EXITCODE_INOUT_STR]  = vmexit_inout,
 	[VM_EXITCODE_VMX]    = vmexit_vmx,
@@ -967,6 +937,8 @@ static vmexit_handler_t handler[VM_EXITCODE_MAX] = {
 	[VM_EXITCODE_DEBUG] = vmexit_debug,
 	[VM_EXITCODE_BPT] = vmexit_breakpoint,
 	[VM_EXITCODE_IPI] = vmexit_ipi,
+	[VM_EXITCODE_HLT] = vmexit_hlt,
+	[VM_EXITCODE_PAUSE] = vmexit_pause,
 };
 
 static void
@@ -1033,7 +1005,7 @@ num_vcpus_allowed(struct vmctx *ctx, struct vcpu *vcpu)
 }
 
 static void
-fbsdrun_set_capabilities(struct vcpu *vcpu, bool bsp)
+fbsdrun_set_capabilities(struct vcpu *vcpu)
 {
 	int err, tmp;
 
@@ -1044,8 +1016,6 @@ fbsdrun_set_capabilities(struct vcpu *vcpu, bool bsp)
 			exit(4);
 		}
 		vm_set_capability(vcpu, VM_CAP_HALT_EXIT, 1);
-		if (bsp)
-			handler[VM_EXITCODE_HLT] = vmexit_hlt;
 	}
 
 	if (get_config_bool_default("x86.vmexit_on_pause", false)) {
@@ -1059,9 +1029,7 @@ fbsdrun_set_capabilities(struct vcpu *vcpu, bool bsp)
 			exit(4);
 		}
 		vm_set_capability(vcpu, VM_CAP_PAUSE_EXIT, 1);
-		if (bsp)
-			handler[VM_EXITCODE_PAUSE] = vmexit_pause;
-        }
+	}
 
 	if (get_config_bool_default("x86.x2apic", false))
 		err = vm_set_x2apic_state(vcpu, X2APIC_ENABLED);
@@ -1135,8 +1103,7 @@ do_open(const char *vmname)
 			exit(4);
 		}
 	}
-	error = vm_set_topology(ctx, cpu_sockets, cpu_cores, cpu_threads,
-	    0 /* maxcpus, unimplemented */);
+	error = vm_set_topology(ctx, cpu_sockets, cpu_cores, cpu_threads, 0);
 	if (error)
 		errx(EX_OSERR, "vm_set_topology");
 	return (ctx);
@@ -1148,7 +1115,7 @@ spinup_vcpu(struct vcpu_info *vi, bool bsp)
 	int error;
 
 	if (!bsp) {
-		fbsdrun_set_capabilities(vi->vcpu, false);
+		fbsdrun_set_capabilities(vi->vcpu);
 
 		/*
 		 * Enable the 'unrestricted guest' mode for APs.
@@ -1235,6 +1202,7 @@ set_defaults(void)
 {
 
 	set_config_bool("acpi_tables", false);
+	set_config_bool("acpi_tables_in_memory", true);
 	set_config_value("memory.size", "256M");
 	set_config_bool("x86.strictmsr", true);
 	set_config_value("lpc.fwcfg", "bhyve");
@@ -1248,7 +1216,6 @@ main(int argc, char *argv[])
 	struct vcpu *bsp;
 	struct vmctx *ctx;
 	struct qemu_fwcfg_item *e820_fwcfg_item;
-	uint64_t rip;
 	size_t memsize;
 	const char *optstr, *value, *vmname;
 #ifdef BHYVE_SNAPSHOT
@@ -1279,12 +1246,12 @@ main(int argc, char *argv[])
 			set_config_bool("destroy_on_poweroff", true);
 			break;
 		case 'p':
-                        if (pincpu_parse(optarg) != 0) {
-                            errx(EX_USAGE, "invalid vcpu pinning "
-                                 "configuration '%s'", optarg);
-                        }
+			if (pincpu_parse(optarg) != 0) {
+				errx(EX_USAGE, "invalid vcpu pinning "
+				    "configuration '%s'", optarg);
+			}
 			break;
-                case 'c':
+		case 'c':
 			if (topology_parse(optarg) != 0) {
 			    errx(EX_USAGE, "invalid cpu topology "
 				"'%s'", optarg);
@@ -1332,7 +1299,7 @@ main(int argc, char *argv[])
 		case 'S':
 			set_config_bool("memory.wired", true);
 			break;
-                case 'm':
+		case 'm':
 			set_config_value("memory.size", optarg);
 			break;
 		case 'o':
@@ -1444,7 +1411,7 @@ main(int argc, char *argv[])
 		exit(4);
 	}
 
-	fbsdrun_set_capabilities(bsp, true);
+	fbsdrun_set_capabilities(bsp);
 
 	/* Allocate per-VCPU resources. */
 	vcpu_info = calloc(guest_ncpus, sizeof(*vcpu_info));
@@ -1503,10 +1470,14 @@ main(int argc, char *argv[])
 	}
 
 	/*
-	 * Exit if a device emulation finds an error in its initilization
+	 * Exit if a device emulation finds an error in its initialization
 	 */
 	if (init_pci(ctx) != 0) {
 		perror("device emulation initialization error");
+		exit(4);
+	}
+	if (init_tpm(ctx) != 0) {
+		fprintf(stderr, "Failed to init TPM device");
 		exit(4);
 	}
 
@@ -1538,7 +1509,7 @@ main(int argc, char *argv[])
 #ifdef BHYVE_SNAPSHOT
 	if (restore_file != NULL) {
 		fprintf(stdout, "Pausing pci devs...\r\n");
-		if (vm_pause_user_devs() != 0) {
+		if (vm_pause_devices() != 0) {
 			fprintf(stderr, "Failed to pause PCI device state.\n");
 			exit(1);
 		}
@@ -1550,7 +1521,7 @@ main(int argc, char *argv[])
 		}
 
 		fprintf(stdout, "Restoring pci devs...\r\n");
-		if (vm_restore_user_devs(&rstate) != 0) {
+		if (vm_restore_devices(&rstate) != 0) {
 			fprintf(stderr, "Failed to restore PCI device state.\n");
 			exit(1);
 		}
@@ -1562,15 +1533,12 @@ main(int argc, char *argv[])
 		}
 
 		fprintf(stdout, "Resuming pci devs...\r\n");
-		if (vm_resume_user_devs() != 0) {
+		if (vm_resume_devices() != 0) {
 			fprintf(stderr, "Failed to resume PCI device state.\n");
 			exit(1);
 		}
 	}
 #endif
-
-	error = vm_get_register(bsp, VM_REG_GUEST_RIP, &rip);
-	assert(error == 0);
 
 	/*
 	 * build the guest tables, MP etc.

@@ -332,6 +332,8 @@ local function make_freebsd_scripts(config)
           utils.execute("dd if=/dev/zero of="..bios_code.." bs=1M count=64")
           utils.execute("dd if=/usr/local/share/qemu/edk2-aarch64-code.fd of="..bios_code.." conv=notrunc")
       end
+    elseif ma == "riscv64" then
+        utils.execute("cp /usr/local/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin "..bios_code)
     end
     local identifier = freebsd_utils.get_identifier(m, ma, fs, bi, enc)
     local img = build.IMAGE_DIR.."/"..mc.."/freebsd-"..identifier..".img"

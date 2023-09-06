@@ -40,8 +40,6 @@
 #include "opt_platform.h"
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/bus.h>
@@ -87,8 +85,6 @@ static device_probe_t riscv64_cpu_probe;
 static device_attach_t riscv64_cpu_attach;
 
 static int ipi_handler(void *);
-
-struct pcb stoppcbs[MAXCPU];
 
 extern uint32_t boot_hart;
 extern cpuset_t all_harts;

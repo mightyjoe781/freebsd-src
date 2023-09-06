@@ -1,4 +1,3 @@
-# $FreeBSD$
 
 SYSDIR?=${SRCTOP}/sys
 .include "${SYSDIR}/conf/kern.opts.mk"
@@ -54,7 +53,6 @@ SUBDIR=	\
 	ath_hal_ar9300 \
 	ath_main \
 	ath_rate \
-	ath_pci \
 	${_autofs} \
 	axgbe \
 	backlight \
@@ -131,6 +129,7 @@ SUBDIR=	\
 	${_glxiic} \
 	${_glxsb} \
 	gpio \
+	${_gve} \
 	hid \
 	hifn \
 	${_hpt27xx} \
@@ -224,6 +223,7 @@ SUBDIR=	\
 	${_mac_bsdextended} \
 	${_mac_ddb} \
 	${_mac_ifoff} \
+	${_mac_ipacl} \
 	${_mac_lomac} \
 	${_mac_mls} \
 	${_mac_none} \
@@ -258,6 +258,7 @@ SUBDIR=	\
 	${_mlx5ib} \
 	mmc \
 	mmcsd \
+	${_mpi3mr} \
 	${_mpr} \
 	${_mps} \
 	mpt \
@@ -273,6 +274,7 @@ SUBDIR=	\
 	mxge \
 	my \
 	${_nctgpio} \
+	${_ncthwm} \
 	${_neta} \
 	netlink \
 	${_netgraph} \
@@ -282,6 +284,7 @@ SUBDIR=	\
 	nfsd \
 	nfslockd \
 	nfssvc \
+	nlsysevent \
 	nge \
 	nmdm \
 	nullfs \
@@ -336,7 +339,6 @@ SUBDIR=	\
 	${_rockchip} \
 	rtsx \
 	${_rtw88} \
-	${_rtw88fw} \
 	rtwn \
 	rtwn_pci \
 	rtwn_usb \
@@ -352,6 +354,7 @@ SUBDIR=	\
 	${_sdhci_fdt} \
 	sdhci_pci \
 	sdio \
+	${_sff} \
 	sem \
 	send \
 	${_sfxge} \
@@ -556,15 +559,13 @@ _mlx5ib=	mlx5ib
 .if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "amd64" || \
     ${MACHINE_CPUARCH} == "i386"
 _ena=		ena
+_gve=		gve
 _iwlwifi=	iwlwifi
 .if ${MK_SOURCELESS_UCODE} != "no"
 _iwlwififw=	iwlwififw
 .endif
 _ossl=		ossl
-_rtw88=		rtw88
-.if ${MK_SOURCELESS_UCODE} != "no"
-_rtw88fw=	rtw88fw
-.endif
+#_rtw88=		rtw88
 _vmware=	vmware
 .endif
 
@@ -576,6 +577,7 @@ _mac_bsdextended= mac_bsdextended
 _mac_ddb=	mac_ddb
 .endif
 _mac_ifoff=	mac_ifoff
+_mac_ipacl=	mac_ipacl
 _mac_lomac=	mac_lomac
 _mac_mls=	mac_mls
 _mac_none=	mac_none
@@ -626,7 +628,13 @@ _rtwnfw=	rtwnfw
 _cxgbe=		cxgbe
 .endif
 
-.if ${MACHINE_ARCH} == "amd64" || ${MACHINE_ARCH} == "arm64" || ${MACHINE_ARCH:Mpowerpc64*}
+# This has only been tested on amd64 and arm64
+.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "aarch64"
+_mpi3mr=mpi3mr
+.endif
+
+.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "aarch64" || \
+	${MACHINE_ARCH:Mpowerpc64*}
 _ice=		ice
 .if ${MK_SOURCELESS_UCODE} != "no"
 _ice_ddp=	ice_ddp
@@ -667,6 +675,7 @@ _cxgb=		cxgb
 .if ${MACHINE_CPUARCH} == "aarch64"
 _armv8crypto=	armv8crypto
 _dpaa2=		dpaa2
+_sff=		sff
 _em=		em
 _hyperv=  hyperv
 
@@ -717,11 +726,10 @@ _lio=		lio
 _mana=		mana
 _mgb=		mgb
 _nctgpio=	nctgpio
+_ncthwm=	ncthwm
 _ntb=		ntb
 _ocs_fc=	ocs_fc
 _p2sb=		p2sb
-_qat=		qat
-_qatfw=		qatfw
 _qat_c2xxx=	qat_c2xxx
 _qat_c2xxxfw=	qat_c2xxxfw
 _safe=		safe
@@ -809,6 +817,10 @@ _ioat=		ioat
 _ixl=		ixl
 _nvdimm=	nvdimm
 _pms=		pms
+_qat=		qat
+.if ${MK_SOURCELESS_UCODE} != "no"
+_qatfw=		qatfw
+.endif
 _qlxge=		qlxge
 _qlxgb=		qlxgb
 _sume=		sume

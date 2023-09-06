@@ -2701,7 +2701,7 @@ dmu_buf_will_clone(dmu_buf_t *db_fake, dmu_tx_t *tx)
 	 */
 	mutex_enter(&db->db_mtx);
 	VERIFY(!dbuf_undirty(db, tx));
-	ASSERT(list_head(&db->db_dirty_records) == NULL);
+	ASSERT3P(dbuf_find_dirty_eq(db, tx->tx_txg), ==, NULL);
 	if (db->db_buf != NULL) {
 		arc_buf_destroy(db->db_buf, db);
 		db->db_buf = NULL;
@@ -4370,22 +4370,6 @@ dbuf_lightweight_ready(zio_t *zio)
 }
 
 static void
-dbuf_lightweight_physdone(zio_t *zio)
-{
-	dbuf_dirty_record_t *dr = zio->io_private;
-	dsl_pool_t *dp = spa_get_dsl(zio->io_spa);
-	ASSERT3U(dr->dr_txg, ==, zio->io_txg);
-
-	/*
-	 * The callback will be called io_phys_children times.  Retire one
-	 * portion of our dirty space each time we are called.  Any rounding
-	 * error will be cleaned up by dbuf_lightweight_done().
-	 */
-	int delta = dr->dr_accounted / zio->io_phys_children;
-	dsl_pool_undirty_space(dp, delta, zio->io_txg);
-}
-
-static void
 dbuf_lightweight_done(zio_t *zio)
 {
 	dbuf_dirty_record_t *dr = zio->io_private;
@@ -4403,16 +4387,8 @@ dbuf_lightweight_done(zio_t *zio)
 		dsl_dataset_block_born(ds, zio->io_bp, tx);
 	}
 
-	/*
-	 * See comment in dbuf_write_done().
-	 */
-	if (zio->io_phys_children == 0) {
-		dsl_pool_undirty_space(dmu_objset_pool(os),
-		    dr->dr_accounted, zio->io_txg);
-	} else {
-		dsl_pool_undirty_space(dmu_objset_pool(os),
-		    dr->dr_accounted % zio->io_phys_children, zio->io_txg);
-	}
+	dsl_pool_undirty_space(dmu_objset_pool(os), dr->dr_accounted,
+	    zio->io_txg);
 
 	abd_free(dr->dt.dll.dr_abd);
 	kmem_free(dr, sizeof (*dr));
@@ -4446,8 +4422,7 @@ dbuf_sync_lightweight(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 	    dmu_tx_get_txg(tx), &dr->dr_bp_copy, dr->dt.dll.dr_abd,
 	    dn->dn_datablksz, abd_get_size(dr->dt.dll.dr_abd),
 	    &dr->dt.dll.dr_props, dbuf_lightweight_ready, NULL,
-	    dbuf_lightweight_physdone, dbuf_lightweight_done, dr,
-	    ZIO_PRIORITY_ASYNC_WRITE,
+	    dbuf_lightweight_done, dr, ZIO_PRIORITY_ASYNC_WRITE,
 	    ZIO_FLAG_MUSTSUCCEED | dr->dt.dll.dr_flags, &zb);
 
 	zio_nowait(dr->dr_zio);
@@ -4482,6 +4457,15 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 	} else if (db->db_state == DB_FILL) {
 		/* This buffer was freed and is now being re-filled */
 		ASSERT(db->db.db_data != dr->dt.dl.dr_data);
+	} else if (db->db_state == DB_READ) {
+		/*
+		 * This buffer has a clone we need to write, and an in-flight
+		 * read on the BP we're about to clone. Its safe to issue the
+		 * write here because the read has already been issued and the
+		 * contents won't change.
+		 */
+		ASSERT(dr->dt.dl.dr_brtwrite &&
+		    dr->dt.dl.dr_override_state == DR_OVERRIDDEN);
 	} else {
 		ASSERT(db->db_state == DB_CACHED || db->db_state == DB_NOFILL);
 	}
@@ -4789,37 +4773,6 @@ dbuf_write_children_ready(zio_t *zio, arc_buf_t *buf, void *vdb)
 	DB_DNODE_EXIT(db);
 }
 
-/*
- * The SPA will call this callback several times for each zio - once
- * for every physical child i/o (zio->io_phys_children times).  This
- * allows the DMU to monitor the progress of each logical i/o.  For example,
- * there may be 2 copies of an indirect block, or many fragments of a RAID-Z
- * block.  There may be a long delay before all copies/fragments are completed,
- * so this callback allows us to retire dirty space gradually, as the physical
- * i/os complete.
- */
-static void
-dbuf_write_physdone(zio_t *zio, arc_buf_t *buf, void *arg)
-{
-	(void) buf;
-	dmu_buf_impl_t *db = arg;
-	objset_t *os = db->db_objset;
-	dsl_pool_t *dp = dmu_objset_pool(os);
-	dbuf_dirty_record_t *dr;
-	int delta = 0;
-
-	dr = db->db_data_pending;
-	ASSERT3U(dr->dr_txg, ==, zio->io_txg);
-
-	/*
-	 * The callback will be called io_phys_children times.  Retire one
-	 * portion of our dirty space each time we are called.  Any rounding
-	 * error will be cleaned up by dbuf_write_done().
-	 */
-	delta = dr->dr_accounted / zio->io_phys_children;
-	dsl_pool_undirty_space(dp, delta, zio->io_txg);
-}
-
 static void
 dbuf_write_done(zio_t *zio, arc_buf_t *buf, void *vdb)
 {
@@ -4894,27 +4847,8 @@ dbuf_write_done(zio_t *zio, arc_buf_t *buf, void *vdb)
 	db->db_data_pending = NULL;
 	dbuf_rele_and_unlock(db, (void *)(uintptr_t)tx->tx_txg, B_FALSE);
 
-	/*
-	 * If we didn't do a physical write in this ZIO and we
-	 * still ended up here, it means that the space of the
-	 * dbuf that we just released (and undirtied) above hasn't
-	 * been marked as undirtied in the pool's accounting.
-	 *
-	 * Thus, we undirty that space in the pool's view of the
-	 * world here. For physical writes this type of update
-	 * happens in dbuf_write_physdone().
-	 *
-	 * If we did a physical write, cleanup any rounding errors
-	 * that came up due to writing multiple copies of a block
-	 * on disk [see dbuf_write_physdone()].
-	 */
-	if (zio->io_phys_children == 0) {
-		dsl_pool_undirty_space(dmu_objset_pool(os),
-		    dr->dr_accounted, zio->io_txg);
-	} else {
-		dsl_pool_undirty_space(dmu_objset_pool(os),
-		    dr->dr_accounted % zio->io_phys_children, zio->io_txg);
-	}
+	dsl_pool_undirty_space(dmu_objset_pool(os), dr->dr_accounted,
+	    zio->io_txg);
 
 	kmem_free(dr, sizeof (dbuf_dirty_record_t));
 }
@@ -5162,7 +5096,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 
 		dr->dr_zio = zio_write(pio, os->os_spa, txg, &dr->dr_bp_copy,
 		    contents, db->db.db_size, db->db.db_size, &zp,
-		    dbuf_write_override_ready, NULL, NULL,
+		    dbuf_write_override_ready, NULL,
 		    dbuf_write_override_done,
 		    dr, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 		mutex_enter(&db->db_mtx);
@@ -5176,7 +5110,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 		    zp.zp_checksum == ZIO_CHECKSUM_NOPARITY);
 		dr->dr_zio = zio_write(pio, os->os_spa, txg,
 		    &dr->dr_bp_copy, NULL, db->db.db_size, db->db.db_size, &zp,
-		    dbuf_write_nofill_ready, NULL, NULL,
+		    dbuf_write_nofill_ready, NULL,
 		    dbuf_write_nofill_done, db,
 		    ZIO_PRIORITY_ASYNC_WRITE,
 		    ZIO_FLAG_MUSTSUCCEED | ZIO_FLAG_NODATA, &zb);
@@ -5195,9 +5129,8 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 		dr->dr_zio = arc_write(pio, os->os_spa, txg,
 		    &dr->dr_bp_copy, data, !DBUF_IS_CACHEABLE(db),
 		    dbuf_is_l2cacheable(db), &zp, dbuf_write_ready,
-		    children_ready_cb, dbuf_write_physdone,
-		    dbuf_write_done, db, ZIO_PRIORITY_ASYNC_WRITE,
-		    ZIO_FLAG_MUSTSUCCEED, &zb);
+		    children_ready_cb, dbuf_write_done, db,
+		    ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 	}
 }
 

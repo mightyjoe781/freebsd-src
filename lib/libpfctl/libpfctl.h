@@ -27,8 +27,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 #ifndef _PFCTL_IOCTL_H_
@@ -353,6 +351,18 @@ struct pfctl_state {
 	uint32_t		 pfsync_time;
 	uint16_t		 state_flags;
 	uint32_t		 sync_flags;
+	uint16_t		 qid;
+	uint16_t		 pqid;
+	uint16_t		 dnpipe;
+	uint16_t		 dnrpipe;
+	uint8_t			 log;
+	int32_t			 rtableid;
+	uint8_t			 min_ttl;
+	uint8_t			 set_tos;
+	uint16_t		 max_mss;
+	uint8_t			 set_prio[2];
+	uint8_t			 rt;
+	char			 rt_ifname[IFNAMSIZ];
 };
 
 TAILQ_HEAD(pfctl_statelist, pfctl_state);
@@ -375,6 +385,9 @@ struct pfctl_syncookies {
 };
 
 struct pfctl_status* pfctl_get_status(int dev);
+uint64_t pfctl_status_counter(struct pfctl_status *status, int id);
+uint64_t pfctl_status_fcounter(struct pfctl_status *status, int id);
+uint64_t pfctl_status_scounter(struct pfctl_status *status, int id);
 void	pfctl_free_status(struct pfctl_status *status);
 
 int	pfctl_get_eth_rulesets_info(int dev,
