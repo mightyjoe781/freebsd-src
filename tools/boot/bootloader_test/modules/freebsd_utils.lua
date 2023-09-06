@@ -9,7 +9,7 @@ local freebsd_utils = {
         "arm:armv7",
         "powerpc:powerpc",
         "powerpc64:powerpc64",
-        "riscv64:riscv64",
+        "riscv:riscv64",
         "powerpc64le:powerpc64le"
     },
     zfs_poolname = "tank",
@@ -263,6 +263,7 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
       -serial stdio $*]],
       qemu_bin, img, bios_code, bios_vars)
     elseif ma == "riscv64" then
+        -- https://wiki.freebsd.org/riscv/QEMU
         script_file = string.format([[%s -machine virt -m 2048M -smp 2 -nographic \
         -bios /usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf \
         -kernel /usr/local/share/u-boot/u-boot-qemu-riscv64/u-boot.bin \
