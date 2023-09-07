@@ -28,7 +28,7 @@ return {
         qemu_args_overrides = "",
     },
     recipe_2 = {
-        arch  = "arm64:arm64",
+        arch  = "arm64:aarch64",
         regex_combination = {"*-*-none"},
     },
     recipe_3 = {
