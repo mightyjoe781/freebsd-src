@@ -58,10 +58,10 @@ function freebsd_utils.find_flavor(arch)
     local m, ma = string.match(arch, "(%w+):(%w+)")
     local flavor = "bootonly.iso"
 
-    -- for arm64, we have GENERICSD images only
-    -- if m == "arm64" then
-    --     flavor = "GENERICSD.img"
-    -- end
+    -- for armv7, we have GENERICSD images only
+    if m == "arm" then
+        flavor = "GENERICSD.img"
+    end
     return flavor
 end
 

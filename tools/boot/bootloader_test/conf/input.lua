@@ -32,6 +32,11 @@ return {
     },
     recipe_3 = {
         arch = "riscv",
-        regex_combination = {"*-*-none"},
+        regex_combination = {"*-gpt-none"},
+    },
+    recipe_4 = {
+        arch = "arm",
+        machine_arch = "armv7",
+        regex_combination = {"*-gpt-none"},
     }
 }
