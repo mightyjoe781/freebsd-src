@@ -256,7 +256,7 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
         -- NOTE : uncomment this carefully
       local warner_recipe = string.format([[%s -m 512M -cpu cortex-a57 -M virt,gic-version=3 -nographic  \
       -drive file=%s,if=none,id=drive0 \
-      -drive file=%s,format=raw,if=pflash readonly=on \
+      -drive file=%s,format=raw,if=pflash,readonly=on \
       -drive file=%s,format=raw,if=pflash \
       -device virtio-blk-device,drive=drive0 \
       -monitor telnet::4444,server,nowait \
