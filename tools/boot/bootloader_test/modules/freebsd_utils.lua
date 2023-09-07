@@ -6,11 +6,13 @@ local freebsd_utils = {
         "amd64:amd64",
         "i386:i386",
         "arm64:aarch64",
+        "arm:armv6",
         "arm:armv7",
         "powerpc:powerpc",
-        "powerpc64:powerpc64",
-        "riscv:riscv64",
-        "powerpc64le:powerpc64le"
+        "powerpc:powerpc64",
+        "powerpc:powerpc64le",
+        "powerpc:powerpcspe",
+        "riscv:riscv64"
     },
     zfs_poolname = "tank",
     _version = "0.1.0",

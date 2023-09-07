@@ -3,7 +3,7 @@
 return {
     recipe_1 = {
         -- required parameters
-        arch  = "amd64",
+        arch  = "amd64:amd64",
         machine_arch = "amd64",
         machine_combo = "amd64",
 
@@ -28,11 +28,11 @@ return {
         qemu_args_overrides = "",
     },
     recipe_2 = {
-        arch  = "arm64",
+        arch  = "arm64:arm64",
         regex_combination = {"*-*-none"},
     },
     recipe_3 = {
-        arch = "riscv",
+        arch = "riscv:riscv64",
         regex_combination = {"*-gpt-none"},
     }
 }
