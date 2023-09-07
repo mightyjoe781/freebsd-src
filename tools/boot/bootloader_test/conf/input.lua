@@ -18,7 +18,8 @@ return {
             a function should evaluate common combination expressions and calculate all possibilities 
                 -- this is acting like filter
         --]]
-        regex_combination = {"ufs-gpt-geli","*-*-*","*-*-geli"},
+        -- regex_combination = {"ufs-gpt-geli","*-*-*","*-*-geli"},
+        regex_combination = {"*-*-none"},
         
         -- several overrides
         mtree_override = "",
@@ -32,6 +33,6 @@ return {
     },
     recipe_3 = {
         arch = "riscv",
-        regex_combination = {"*-*-none"},
+        regex_combination = {"*-gpt-none"},
     }
 }

@@ -7,11 +7,11 @@ local utils = require "modules.utils"
 
 -- list of universe of possible combinations
 local combination = {
-    arch = {"amd64", "i386", "armv7", "arm64", "riscv64", "powerpc64", "powerpc64le"},
+    arch = {"amd64", "i386", "armv7", "arm64", "riscv", "powerpc64", "powerpc64le"},
     filesystem = {"zfs", "ufs"},
     interface = {"gpt", "mbr"},
     encryption = {"geli", "none"},
-    blacklist_regex = {"riscv64-*-mbr-*"},
+    blacklist_regex = {"riscv-*-mbr-*"},
     linuxboot_edk2 = {"amd64-*-*-*","arm64-*-*-*"},
 
     _version = "0.1.0",
