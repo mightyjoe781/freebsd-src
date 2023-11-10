@@ -168,6 +168,14 @@ function parser.get_all_configurations(file, filter_combination)
 
     -- print all the filtered configs
     -- utils.tprint(filtered_configs)
+
+    -- in each of filtered_config attach a port that is unique
+    -- Generate a unique port for each configuration
+    local portCounter = 4000  -- Starting port number
+    for _, config in ipairs(filtered_configs) do
+        config.port = portCounter  -- Assign the unique port to the config
+        portCounter = portCounter + 1  -- Increment the port counter for the next configuration
+    end
     return filtered_configs
 end
 

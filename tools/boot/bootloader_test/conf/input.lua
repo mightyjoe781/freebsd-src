@@ -38,6 +38,6 @@ return {
     recipe_4 = {
         arch = "arm:armv7",
         freebsd_version = "13.2",
-        regex_combination = {"*-gpt-none"}
+        regex_combination = {"*-*-none"}
     }
 }

@@ -239,7 +239,7 @@ function freebsd_utils.get_qemu_bin(ma)
 end
 
 -- returns the qemu script for the m, ma
-function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
+function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars, port)
 
     local script_file = ""
     local qemu_bin = freebsd_utils.get_qemu_bin(ma)
@@ -249,9 +249,10 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
       -drive file=%s,if=none,id=drive0,cache=writeback,format=raw \
       -device virtio-blk,drive=drive0,bootindex=0 \
       -drive file=%s,format=raw,if=pflash \
-      -monitor telnet::4444,server,nowait \
+      -monitor telnet::%d,server,nowait \
       -serial stdio $*]],
-      qemu_bin, img, bios_code, bios_vars)
+      qemu_bin, img, bios_code, port)
+    --   qemu_bin, img, bios_code, bios_vars, freebsd_utils.generateRandomPort(4000,8000))
     elseif ma == "aarch64" then
         -- make a raw file
         -- warner's old recipe
@@ -261,9 +262,9 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
       -drive file=%s,format=raw,if=pflash,readonly=on \
       -drive file=%s,format=raw,if=pflash \
       -device virtio-blk-device,drive=drive0 \
-      -monitor telnet::4444,server,nowait \
+      -monitor telnet::%d,server,nowait \
       -serial stdio $*]]
-      ,qemu_bin, img, bios_code, bios_vars)
+      ,qemu_bin, img, bios_code, bios_vars, port)
 
       -- lwh's recipe from https://wiki.freebsd.org/arm64/QEMU
       local lwh_recipe = string.format([[%s -m 512M -cpu cortex-a57 -M virt,gic-version=3 -nographic \
@@ -282,16 +283,23 @@ function freebsd_utils.get_qemu_script(m, ma, fs, img, bios_code, bios_vars)
         -kernel /usr/local/share/u-boot/u-boot-qemu-riscv64/u-boot.bin \
         -drive file=%s,format=raw,id=hd0 \
         -device virtio-blk-device,drive=hd0,bootindex=0 \
-        -monitor telnet::4440,server,nowait \
-        -serial stdio $*]],qemu_bin,img)
+        -monitor telnet::%d,server,nowait \
+        -serial stdio $*]],qemu_bin,img, port)
     
     elseif ma == "armv7" then
         script_file = string.format([[%s -machine virt -m 512M -smp 2 -nographic \
         -bios /usr/local/share/u-boot/u-boot-qemu-arm/u-boot.bin \
         -drive if=none,file=%s,id=hd0 \
         -device virtio-blk-device,drive=hd0 \
-        -monitor telnet::4440,server,nowait \
-        -serial stdio $*]],qemu_bin,img)
+        -monitor telnet::%d,server,nowait \
+        -serial stdio $*]],qemu_bin,img,port)
+    elseif ma == "powerpc64" then
+        script_file = string.format([[%s -machine pseries,accel=kvm,cap-cfpc=broken,cap-sbbc=broken,cap-ibs=broken \
+        -m 512M -smp 2 -nographic -enable-kvm \
+        -drive if=none,file=%s,id=hd0 \
+        -device virtio-blk-device,drive=hd0 \
+        -monitor telnet::%d,server,nowait \
+        -serial stdio $*]],qemu_bin,img, port)
     end
 
     return script_file
