@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import queue
 import subprocess
@@ -45,8 +46,18 @@ def consume_tasks(task_queue, timeout, counters):
             # print(f"Worker {threading.current_thread().name} has no task to execute")
             break  # No tasks left, exit loop
 
+
+cpu_cores = psutil.cpu_count(logical=True)  # Physical CPU cores
+available_memory = psutil.virtual_memory().available  # Available memory in bytes
+print(f"Cores: {cpu_cores}")
+print(f"Memory: {int(available_memory/(1024*1024))}MB")
+
+# 75% of available memory
+mem_threshold = 0.75 * available_memory
+# Maximum workers based on available memory (if each worker takes a maximum of 512MB)
+max_workers = min(cpu_cores, int(mem_threshold / (512 * 1024 * 1024)))  # Convert bytes to MB
 # Number of worker threads
-max_workers = 7
+# max_workers = 5
 timeout = 60  # Timeout for each worker in seconds
 
 # List of scripts/tasks to be processed
