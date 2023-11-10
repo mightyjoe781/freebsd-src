@@ -35,6 +35,7 @@ local build = {
     OVERRIDES = STAND_ROOT.."/overrides",
     FREEBSD_VERSION = "13.1",
     URLBASE = "https://download.freebsd.org/ftp/releases",
+    VIRTUAL_DEVICE_ID = 3,
 
     _version = "0.1.0",
     _name = "build",
@@ -106,15 +107,36 @@ end
 local get_img_filename = freebsd_utils.get_img_filename
 local get_img_url = freebsd_utils.get_img_url
 
+local function do_mount(file, mnt_dir)
+    -- create a virtual device
+    logger.info(string.format("Mounting: %s at Mount Point: %s",file, mnt_dir))
+    utils.execute("mdconfig -a -t vnode -f "..file.." -u "..build.VIRTUAL_DEVICE_ID)
+    utils.execute("mount -t ufs /dev/md"..build.VIRTUAL_DEVICE_ID.."s2a "..mnt_dir)
+end
+
+local function do_unmount(mnt_dir)
+    logger.debug("Removing Mount Dir: "..mnt_dir)
+    -- remove virtual device
+    utils.execute("umount "..mnt_dir)
+    utils.execute("mdconfig -d -u "..build.VIRTUAL_DEVICE_ID)
+    logger.info("Removed Mount Dir: "..mnt_dir)
+end
+
+local function teardown_build_env()
+    -- do_unmount("/mnt/armv7")
+end
+
+
 local function update_freebsd_img(file, img_url)
-    -- if file exists in cache, return
-    local filepath = build.CACHE_DIR.."/"..file..".xz"
-    logger.debug("Checking if file "..filepath.." exists in cache")
-    if utils.file_exists(filepath) then
-        logger.info("File "..filepath.." already exists in cache, skipping download")
+    -- if file exists in cache, return (NOTE: not .xz)
+    logger.debug("Checking if file "..file.." exists in cache")
+    -- first check if .iso or .img file already exists ? then exit
+    if utils.file_exists(build.CACHE_DIR.."/"..file) then
+        logger.info("File "..file.." already exists in cache, skipping download")
         return
     end
-    logger.info("File "..filepath.." does not exist in cache, downloading")
+    logger.info("File "..file.." does not exist in cache, downloading")
+    local filepath = build.CACHE_DIR.."/"..file..".xz"
     -- else we download the image
     utils.fetch_file(img_url, filepath)
     -- extract that image
@@ -175,9 +197,26 @@ local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, r
     utils.execute("ln -s . "..tree.."/usr")
 
     -- snag binaries for simple /etc/rc/file
-    logger.debug("Extracting binaries from "..build.CACHE_DIR.."/"..img_filename)
-    utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." sbin/reboot sbin/halt sbin/init bin/sh sbin/sysctl lib/libncursesw.so.9 lib/libc.so.7 lib/libedit.so.8 libexec/ld-elf.so.1")
-  
+    if machine_arch == "armv7" then
+        -- try to look for files at mnt point for now assume /mnt/armv7
+        os.execute("mkdir -p /mnt/armv7")
+        local check_mnt = utils.check_files("/mnt/armv7/")
+        if not check_mnt then
+            do_mount(build.CACHE_DIR.."/"..img_filename, "/mnt/armv7")
+        else
+            logger.warn("/mnt/armv7 is not empty. Using already mounted files!")
+        end
+        local files = "sbin/reboot sbin/halt sbin/init bin/sh sbin/sysctl lib/libncursesw.so.9 lib/libc.so.7 lib/libgcc_s.so.1 lib/libedit.so.8 libexec/ld-elf.so.1"
+        logger.debug("Copying files from /mnt/armv7")
+        for file in files:gmatch("%S+") do
+            -- utils.execute("echo cp -r /mnt/armv7/"..file.."")
+            utils.execute(string.format("cp -r /mnt/armv7/%s %s/%s || true",file,tree,file))
+        end
+        logger.debug("Copied files successfully!")
+    else
+        logger.debug("Extracting binaries from "..build.CACHE_DIR.."/"..img_filename)
+        utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." sbin/reboot sbin/halt sbin/init bin/sh sbin/sysctl lib/libncursesw.so.9 lib/libc.so.7 lib/libedit.so.8 libexec/ld-elf.so.1")    
+    end
     -- simple etc/rc
     -- save rc in a file, but due to weird lua io.open() behaviour, we need create a file first
     -- make it executable
@@ -207,7 +246,15 @@ local function make_freebsd_minimal_trees(machine, machine_arch, img_filename, r
         logger.debug("No overrides found for "..machine_combo)
         logger.debug("Using default kernel")
         -- copy kernel from image
-        utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." boot/kernel/kernel boot/kernel/acl_nfs4.ko boot/kernel/cryptodev.ko boot/kernel/zfs.ko boot/kernel/geom_eli.ko boot/device.hints || true")
+        if machine_arch == "armv7" then
+            local files = "boot/kernel/kernel boot/kernel/acl_nfs4.ko boot/kernel/cryptodev.ko boot/kernel/zfs.ko boot/kernel/geom_eli.ko boot/device.hints"
+            logger.debug("Copying files from /mnt/armv7")
+            utils.copy_files_from_list(files, "/mnt/armv7", tree)
+            do_unmount("/mnt/armv7")
+            logger.debug("Copied files successfully!")
+        else
+            utils.execute("tar -C "..tree.." -xf "..build.CACHE_DIR.."/"..img_filename.." boot/kernel/kernel boot/kernel/acl_nfs4.ko boot/kernel/cryptodev.ko boot/kernel/zfs.ko boot/kernel/geom_eli.ko boot/device.hints || true")
+        end
     end
 
     -- setup some common settings for serial console
@@ -334,6 +381,8 @@ local function make_freebsd_scripts(config)
       end
     elseif ma == "riscv64" then
         utils.execute("cp /usr/local/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin "..bios_code)
+    elseif ma == "armv7" then
+        
     end
     local identifier = freebsd_utils.get_identifier(m, ma, fs, bi, enc)
     local img = build.IMAGE_DIR.."/"..mc.."/freebsd-"..identifier..".img"
@@ -391,8 +440,8 @@ function build.build_freebsd_bootloader_tree(config)
     local linuxboot_edk2 = config.linuxboot_edk2 
 
     -- for updating cache
-    local flavour = config.flavour or freebsd_utils.find_flavor(arch)
-    local FREEBSD_VERSION = config.freebsd_version or build.FREEBSD_VERSION
+    local flavour = config.recipe.flavour or freebsd_utils.find_flavor(arch)
+    local FREEBSD_VERSION = config.recipe.freebsd_version or build.FREEBSD_VERSION
     local img_filename = config.img_filename or freebsd_utils.get_img_filename(machine_combo, flavour, FREEBSD_VERSION)
     local img_url = config.img_url or freebsd_utils.get_img_url(machine, machine_arch, img_filename, FREEBSD_VERSION)
 
@@ -431,6 +480,7 @@ function build.build_freebsd_bootloader_tree(config)
     make_freebsd_images(config)
     make_freebsd_scripts(config)
     -- if all goes well, return 0, nil
+    teardown_build_env()
     return 0, nil
 end
 

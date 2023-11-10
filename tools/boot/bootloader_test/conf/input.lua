@@ -8,7 +8,7 @@ return {
         machine_combo = "amd64",
 
         -- optional parameters
-        FreeBSD_version = "13.0",
+        freebsd_version = "13.1",
         img_flavour = "bootonly.iso",
         img_url = "FreeBSD-13.0-RELEASE-amd64-bootonly.iso",
 
@@ -28,11 +28,16 @@ return {
         qemu_args_overrides = "",
     },
     recipe_2 = {
-        arch  = "arm64:arm64",
+        arch  = "arm64:aarch64",
         regex_combination = {"*-*-none"},
     },
     recipe_3 = {
         arch = "riscv:riscv64",
         regex_combination = {"*-gpt-none"},
+    },
+    recipe_4 = {
+        arch = "arm:armv7",
+        freebsd_version = "13.2",
+        regex_combination = {"*-gpt-none"}
     }
 }

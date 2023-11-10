@@ -240,4 +240,25 @@ function utils.read_file(file)
     f:close()
     return content
 end
+
+function utils.check_files(directory)
+    local command = 'ls -A "' .. directory .. '"'
+    local output = utils.capture_execute(command)
+    return output ~= '' -- If there are files, the output won't be empty
+end
+
+function utils.copy_files_from_list(files, src, dst, mode)
+    local files = files or ""
+    -- mode 0 ignores not found files
+    local m = mode or 0
+    for file in files:gmatch("%S+") do
+        -- utils.execute("echo cp -r /mnt/armv7/"..file.."")
+        if m == 0 then
+            utils.execute(string.format("cp -r %s/%s %s/%s || true",src,file,dst,file))
+        else
+            utils.execute(string.format("cp -r %s/%s %s/%s",src,file,dst,file))
+        end
+    end
+end
+
 return utils
