@@ -1,4 +1,5 @@
 import os
+import sys
 import queue
 import subprocess
 import threading
@@ -25,6 +26,7 @@ def consume_tasks(task_queue, timeout, counters):
             start = time.time()
             process = subprocess.Popen(['/bin/sh', script], stdout=open(log_file, "w"), stderr=subprocess.STDOUT, shell=False)
             process.communicate(timeout=timeout)  # Execute the task
+            sys.stdout.write("\r" + " " * 60 + "\r")  # Clear the line
             els_time = time.time() - start
             # check if process was success or not
             if process.returncode == 0:
@@ -37,6 +39,7 @@ def consume_tasks(task_queue, timeout, counters):
         except subprocess.TimeoutExpired:
             recursive_kill(process)
             els_time = time.time() - start
+            sys.stdout.write("\r" + " " * 50 + "\r")  # Clear the line
             print(f"{script.split('/')[-1]} timed out in {els_time:.2f}s")
             counters['timeout'] += 1
             with open(log_file, 'w') as log:
@@ -103,8 +106,20 @@ for i in range(max_workers):
 producer_thread.join()
 
 # Wait for all tasks to be processed
-for worker in worker_threads:
-    worker.join()
+# for worker in worker_threads:
+#     worker.join()
+
+# Interactive Wait :)
+symbols = [".  ", ".. ", "...", " ..", "  ."]  # Rotating dot symbols
+current_symbol = 0
+while any(worker.is_alive() for worker in worker_threads):
+    # print(f" [{sum(worker.is_alive() for worker in worker_threads)} / {len(worker_threads)}] Workers Active | [{sum(c for c in counters.values())} / {len(scripts)}] Tasks Completed {symbols[current_symbol % len(symbols)]}", end='\r', flush=True) 
+    fill = sum(c for c in counters.values())
+    percent = int(fill/(len(script_dir)*10))
+    print(f" [{'='*fill*2}>{' '*(20-fill)}]({fill} / {len(scripts)}) Tasks Completed {symbols[current_symbol % len(symbols)]}", end='\r', flush=True) 
+    current_symbol = (current_symbol + 1) % len(symbols)
+    time.sleep(0.5)
+
 
 
 elapsed_time = time.time() - start_time
