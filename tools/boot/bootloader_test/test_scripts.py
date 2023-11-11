@@ -60,7 +60,7 @@ max_workers = min(cpu_cores, int(mem_threshold / (512 * 1024 * 1024)))  # Conver
 timeout = 60  # Timeout for each worker in seconds
 
 # List of scripts/tasks to be processed
-root_dir = "/root/stand-test-root/scripts/"
+root_dir = os.path.expanduser("~")+"/stand-test-root/scripts/"
 dirs = ["amd64", "arm64-aarch64", "arm-armv7", "riscv-riscv64"]
 scripts = []
 
@@ -69,6 +69,9 @@ for directory in dirs:
     files = os.listdir(script_dir)
     for file in files:
         scripts.append(script_dir + file)
+
+if not os.path.exists('../runs'):
+    os.makedirs('../runs')
 
 print(f"{len(scripts)} scripts scheduled.")
 print(f"Workers: {max_workers}")
