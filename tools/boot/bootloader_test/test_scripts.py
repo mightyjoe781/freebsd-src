@@ -124,5 +124,6 @@ while any(worker.is_alive() for worker in worker_threads):
 
 elapsed_time = time.time() - start_time
 
+sys.stdout.write("\r" + " " * 60 + "\r")  # Clear the line
 print(f"Total Time Elapsed: {elapsed_time:.2f}s")
 print("\nSummary : \n{} Passed\n{} Failed".format(counters['passed'], counters['failed'] + counters['timeout']))
